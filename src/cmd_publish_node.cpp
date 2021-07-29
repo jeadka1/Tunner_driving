@@ -198,8 +198,8 @@ private:
         if (!config_.amcl_driving_) // No amcl (Mapping Mode)
         {
             cmd_vel.linear.x = config_.linear_vel_;
-	    cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
-	    pub_cmd_.publish(cmd_vel); 
+						cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
+						pub_cmd_.publish(cmd_vel); 
         }
         else // AMCL Mode
         {
@@ -211,7 +211,7 @@ private:
                 cmd_vel.linear.x = 0.0;
       	        pub_cmd_.publish(cmd_vel);
             }
-            else if(is_arrived_ && fid_area<5000)
+            else if(is_arrived_ || fid_area>5000) //to stop QR code 
             {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.linear.z = 0.0;
@@ -235,6 +235,8 @@ private:
 	ros::Subscriber sub_aisle_;
 	ros::Subscriber sub_localization_;
 	ros::Subscriber sub_driving_;
+	ros::Subscriber sub_area_;
+
     
 	ros::Publisher pub_cmd_;
 
