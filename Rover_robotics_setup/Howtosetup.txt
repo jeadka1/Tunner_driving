@@ -1,0 +1,77 @@
+1. Error:
+Module no rospkg
+Moudle no ds4drv
+
+solve:
+$ sudo gedit ~/.bashrc
+
+alias python=python3
+
+Ctrl+s
+$ source ~/.bashrc
+
+$pip3 install rospkg
+$pip3 install ds4drv
+
+
+
+2. Error
+ERROR: cannot launch node of type [rr_rover_zero_driver/rover_zero.py]: Cannot locate node of type [rover_zero.py] in package [rr_rover_zero_driver]. Make sure file exists in package path and permission is set to executable (chmod +x)
+
+sol:
+$ sudo chmod +x rover_zero.py
+
+
+3. Error: 
+[FATAL] [1626070610.127690]: Could not open serial at /dev/rover-zero
+[INFO] [1626070610.132495]: Linear Scale is at 1.500000
+[INFO] [1626070610.314145]: [hidraw]: Scanning for devices
+[rover_zero_driver_node-1] process has died [pid 2703, exit code 1, cmd /home/cocel/catkin_ws/src/roverrobotics_stack/rr_rover_zero_driver/scripts/rover_zero.py /cmd_vel:=/cmd_vel/managed __name:=rover_zero_driver_node __log:=/home/cocel/.ros/log/792570fc-e2d8-11eb-9b96-e70b312a4980/rover_zero_driver_node-1.log].
+log file: /home/cocel/.ros/log/792570fc-e2d8-11eb-9b96-e70b312a4980/rover_zero_driver_node-1*.log
+
+sol:
+launch file
+from
+<param name="dev" value="/dev/rover-zero"/>
+to
+<param name="dev" value="/dev/rover"/>
+
+4. warning:
+<param name="enable_encoder_odom" value="True"/>
+<param name="enable_esc_feedback_controls" value="True"/>
+<param name="v_pid_overwrite" value="True"/>
+
+5. error:
+[rover_zero_driver_node-1] process has died [pid 3251, exit code 1, cmd /home/cocel/catkin_ws/src/roverrobotics_stack/rr_rover_zero_driver/scripts/rover_zero.py /cmd_vel:=/cmd_vel/managed __name:=rover_zero_driver_node __log:=/home/cocel/.ros/log/792570fc-e2d8-11eb-9b96-e70b312a4980/rover_zero_driver_node-1.log].
+log file: /home/cocel/.ros/log/792570fc-e2d8-11eb-9b96-e70b312a4980/rover_zero_driver_node-1*.log
+
+
+sol:
+Above error is from wrong launch file
+roslaunch rr_rover_zero_driver teleop.launch 
+
+So, we need to launch below launch file after changing the /dev/rover
+
+$roslaunch rr_rover_zero_v2_driver teleop.launch 
+
+
+6. error:
+[FATAL] [1626071770.756875752]: Failed to connect to the VESC, SerialException Failed to open the serial port to the VESC. IO Exception (2): No such file or directory, file /tmp/binarydeb/ros-melodic-serial-1.2.1/src/impl/unix.cc, line 151. failed..
+
+
+launch file
+$roslaunch rr_rover_zero_v2_driver teleop.launch 
+<arg name="port" default="/dev/rover" />
+
+
+#---------------------------------------------------------------------------------------------------------------------
+in rover_v2 driver foldr
+driver.yaml
+
+port: "/dev/rover-zero-v2" 
+trim: 0 
+odom_angular_coef: 2.3 #2.78648555(1/wheel_Base) #2.3
+odom_traction_factor: 1
+hall_ratio: 8832 #96 (gear_ratio)* 92 (hall_resolution or encoder_resolution)
+
+

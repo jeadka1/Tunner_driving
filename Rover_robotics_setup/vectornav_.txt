@@ -1,0 +1,22 @@
+
+$ sudo gedit ~/.bashrc
+
+Add below sentences at the bottom after changing the ttyS0 to vn100 
+ ----------------------
+(echo "150403"; echo "150403") | sudo -S chmod 777 /dev/vn100
+(echo "150403"; echo "150403") | sudo -S chown cocel /dev/vn100
+(echo "150403"; echo "150403") | sudo -S chgrp cocel /dev/vn100
+
+ ----------------------
+
+
+
+#ekf_template.yaml
+
+two_d_mode: true
+
+#vectornav.launch
+<!--arg name="frame_id" default="vectornav"/-->
+<arg name="frame_id" default="imu"/>
+
+

@@ -1,0 +1,15 @@
+1. error
+
+Could not find a configuration file for package "realsense2" that is   compatible with requested version "2.48.0".
+
+sol:
+https://github.com/UbiquityRobotics/raspicam_node/#calibration
+
+There is build intruction.
+
+
+
+2. error
+ 29/07 15:49:14,765 ERROR [139627745163008] (uvc-streamer.cpp:106) uvc streamer watchdog triggered on endpoint: 130
+[ WARN] [1627541354.942661267]: Hardware Notification:USB REC overflow,1.62754e+12,Error,Hardware Error
+

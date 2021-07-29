@@ -1,0 +1,9 @@
+git clone https://github.com/RoverRobotics/librover.git
+cd librover
+cmake .
+make
+sudo make install
+
+
+cd workspace/src/
+git clone https://github.com/RoverRobotics/roverrobotics_ros1
