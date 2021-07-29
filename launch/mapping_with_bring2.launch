@@ -9,8 +9,9 @@
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="false"/>
     <arg name="use_static_tf" default="true"/>
+    
 
-    <!--node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/-->
+    <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/>
 
     <node if="$(arg use_rp)" name="rplidarNode"          pkg="rplidar_ros"  type="rplidarNode" output="screen">
         <param name="serial_port"         type="string" value="/dev/rplidar"/>
@@ -24,18 +25,21 @@
 
     <include if="$(arg use_velo)" file="$(find velodyne_pointcloud)/launch/VLP16_points.launch"/>
     <include if="$(arg use_joy)" file="$(find teleop_twist_joy)/launch/teleop.launch"/>
+    <!--include file="$(find vectornav)/launch/vectornav.launch"/>
+    <include file="$(find robot_localization)/launch/ekf_nodelet_template.launch"/-->
+
     
     <!-- LEO_DRIVING PACKAGE-->
     <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /lidar_driving std_msgs/Bool true" output="screen"/>
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     
-    <node pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
+    <!--node pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/aisle_detect.yaml"/>
-    </node>
+    </node-->
 
-    <node pkg="nodelet" type="nodelet" name="ObstaclesNode_loader" args="load auto_driving/ObstaclesNode nodelet_manager" output="screen">
+    <!--node pkg="nodelet" type="nodelet" name="ObstaclesNode_loader" args="load auto_driving/ObstaclesNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/obstacles.yaml"/>
-    </node>
+    </node-->
 
     <!--node pkg="nodelet" type="nodelet" name="CmdPublishNode_loader" args="load auto_driving/CmdPublishNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/cmd_publish.yaml"/>

@@ -1,0 +1,7 @@
+<library path="lib/libArucoNode">
+    <class name="auto_driving/ArucoNode" type="auto_driving::ArucoNode" base_class_type="nodelet::Nodelet">
+        <description>
+            Aruco detection nodelet
+        </description>
+    </class>
+</library>

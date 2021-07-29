@@ -30,6 +30,9 @@ class CmdPublishNode : public nodelet::Nodelet {
     float line_end_y_ = 30;
     float ref_y_ = 0;
     float near_y_ = 0;
+
+		float fid_ID=0;
+		float fid_area=0;
     
     // 
     bool is_rotating_ = false;
@@ -66,6 +69,8 @@ private:
         sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
     
         sub_driving_ = nhp.subscribe<std_msgs::Bool> ("/lidar_driving", 10, &CmdPublishNode::publishCmd, this);
+
+        sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &CmdPublishNode::areaDataCallback, this);
         
         pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
 	};
@@ -125,6 +130,11 @@ private:
         is_arrived_ = local_msgs->data[2];
         is_rotating_ = local_msgs->data[3];
     }
+		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
+		{
+			fid_ID =area_msgs->data[0];
+			fid_area =area_msgs->data[1];
+		}
 
     void publishCmd(const std_msgs::Bool::ConstPtr &driving_start)
     {
@@ -188,7 +198,8 @@ private:
         if (!config_.amcl_driving_) // No amcl (Mapping Mode)
         {
             cmd_vel.linear.x = config_.linear_vel_;
-	    cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+	    cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
+	    pub_cmd_.publish(cmd_vel); 
         }
         else // AMCL Mode
         {
@@ -198,20 +209,23 @@ private:
                 double bounded_ang_err = std::min(abs(double(global_ang_err_)), 1.0);
                 cmd_vel.angular.z = -config_.Kpy_param_rot_ * bounded_ang_err;
                 cmd_vel.linear.x = 0.0;
+      	        pub_cmd_.publish(cmd_vel);
             }
-            else if(is_arrived_)
+            else if(is_arrived_ && fid_area<5000)
             {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.linear.z = 0.0;
+                pub_cmd_.publish(cmd_vel);
                 ros::Duration(1).sleep();
             }
             else 
             {
                 cmd_vel.linear.x = config_.linear_vel_;
                 cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+	        //pub_cmd_.publish(cmd_vel);
             }
         }
-        pub_cmd_.publish(cmd_vel);
+
     }
 
 private:
