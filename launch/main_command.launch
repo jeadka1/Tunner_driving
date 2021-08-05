@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+
+    <!-- LEO_DRIVING PACKAGE-->
+    <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
+    
+    <node pkg="nodelet" type="nodelet" name="MaincommandNodeNode_loader" args="load auto_driving/MaincommandNode nodelet_manager" output="screen">
+        <rosparam command="load" file="$(find leo_driving)/config/main_command.yaml"/>
+    </node>
+</launch>

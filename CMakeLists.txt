@@ -16,7 +16,7 @@ find_package(PCL REQUIRED)
 
 catkin_package(
         #  INCLUDE_DIRS include
-        LIBRARIES LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode
+        LIBRARIES LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
         CATKIN_DEPENDS nodelet roscpp sensor_msgs tf geometry_msgs fiducial_msgs pcl_conversions laser_geometry
         DEPENDS PCL
 )
@@ -55,17 +55,22 @@ add_library(ArucoNode src/aruco_node.cpp)
 add_dependencies(ArucoNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ArucoNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 
+add_library(MaincommandNode src/main_command_node.cpp)
+add_dependencies(MaincommandNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(MaincommandNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+
 add_library(${PROJECT_NAME}_nodelets
   src/localization_node.cpp
   src/aisle_detect_node.cpp
   src/obstacles_node.cpp
   src/cmd_publish_node.cpp
-  src/aruco_node.cpp)
+  src/aruco_node.cpp
+  src/main_command_node.cpp)
 
-target_link_libraries(${PROJECT_NAME}_nodelets LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode)
+target_link_libraries(${PROJECT_NAME}_nodelets LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode)
 
 
-install(TARGETS LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode
+install(TARGETS LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
         DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
 
 install(DIRECTORY include/${PROJECT_NAME}/

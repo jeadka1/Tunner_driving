@@ -54,6 +54,11 @@ private:
 			localization_msgs.data.push_back(10000); // global_ang_err
 			localization_msgs.data.push_back(true); // is_arrived -> Not moving
 			localization_msgs.data.push_back(false); // is_rotating
+
+			localization_msgs.data.push_back(0); // global_x_err
+			localization_msgs.data.push_back(0); // global_y_err
+			localization_msgs.data.push_back(0); // global_theta_err
+			localization_msgs.data.push_back(0); // global_c_theta_err
 			pub_localization_.publish(localization_msgs);
 			return;
 		}
@@ -66,6 +71,7 @@ private:
 		float global_y_err = current_goal_.pose.position.y - pose_msg->pose.pose.position.y;
 		double global_dist_err = sqrt(global_x_err*global_x_err + global_y_err*global_y_err);	
 		double global_ang_err;
+		double static_x_err,static_y_err;
 		std::cout << "goal (x,y): " <<"(" <<current_goal_.pose.position.x << ", " <<current_goal_.pose.position.y << ")" <<std::endl;		
 		std::cout << "curr (x,y): " <<"(" <<pose_msg->pose.pose.position.x << ", " << pose_msg->pose.pose.position.y << ")" <<std::endl;
 		std::cout << "distance :" << global_dist_err <<std::endl;
@@ -105,6 +111,8 @@ private:
 			if(!is_rotating_) 
 			{
 				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
 				goal_yaw = yaw + M_PI; // save current when start rotating
 				if(goal_yaw > M_PI)
 					goal_yaw -= 2*M_PI;
@@ -113,7 +121,10 @@ private:
 				is_rotating_ = true;
 				ros::Duration(1).sleep();
 			}
-
+			static_x_err = static_x - pose_msg->pose.pose.position.x;
+			static_y_err = static_y - pose_msg->pose.pose.position.y;
+			static_t = goal_yaw;
+			static_ct = yaw;
 			// 2.2.1 Check whether robot should rotate
 				//To rotate 180 degree from the position where the mobile robot is arrived. // goalyaw mean "arrival yaw"
 			global_ang_err = goal_yaw - yaw;  
@@ -136,6 +147,11 @@ private:
 		localization_msgs.data.push_back(global_ang_err);
 		localization_msgs.data.push_back(is_arrived);
 		localization_msgs.data.push_back(is_rotating_);
+
+		localization_msgs.data.push_back(static_x_err);
+		localization_msgs.data.push_back(static_y_err);
+		localization_msgs.data.push_back(static_t);
+		localization_msgs.data.push_back(static_ct);
 		pub_localization_.publish(localization_msgs);
 	}
 
@@ -150,6 +166,7 @@ private:
 	int goal_index_ = 0;
 	int goal_count_ = 0;    
 	double goal_yaw = M_PI;	
+	double static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;

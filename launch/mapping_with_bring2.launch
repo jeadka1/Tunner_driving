@@ -25,8 +25,9 @@
 
     <include if="$(arg use_velo)" file="$(find velodyne_pointcloud)/launch/VLP16_points.launch"/>
     <include if="$(arg use_joy)" file="$(find teleop_twist_joy)/launch/teleop.launch"/>
-    <!--include file="$(find vectornav)/launch/vectornav.launch"/>
-    <include file="$(find robot_localization)/launch/ekf_nodelet_template.launch"/-->
+
+    <include file="$(find vectornav)/launch/vectornav.launch"/>
+    <include file="$(find robot_localization)/launch/ekf_template.launch"/>
 
     
     <!-- LEO_DRIVING PACKAGE-->

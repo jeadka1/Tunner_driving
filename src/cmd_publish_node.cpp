@@ -23,7 +23,10 @@ class CmdPublishNode : public nodelet::Nodelet {
     double spare_length = 0;
     // Amcl
     float global_dist_err_ = 0;
-    float global_ang_err_ = 0;    
+    float global_ang_err_ = 0;  
+		float global_x_err_ =0;  
+		float global_y_err_ =0,global_theta_=0.0,global_c_theta_=0.0;
+
     
     // Aisle
     float line_start_y_ = -30; 
@@ -37,6 +40,7 @@ class CmdPublishNode : public nodelet::Nodelet {
     // 
     bool is_rotating_ = false;
     bool is_arrived_ = true;
+		bool is_linetracking = false;
     
 
 public:
@@ -61,6 +65,12 @@ private:
         nhp.param("spare_length", config_.spare_length_, 1.5);
         nhp.param("amcl_driving", config_.amcl_driving_, false);
         nhp.param("check_obstacles", config_.check_obstacles_, false);
+        nhp.param("rot_kx", config_.rot_kx_, 0.1);
+        nhp.param("rot_ky", config_.rot_ky_, 0.1);
+        nhp.param("rot_kt", config_.rot_kt_, 0.3);
+        nhp.param("min_vel", config_.min_vel_, 0.05);
+        nhp.param("min_rot", config_.min_rot_, 0.05);
+        nhp.param("max_rot", config_.max_rot_, 0.05);
 
         // // Subscriber & Publisher
         sub_joy_ = nhp.subscribe<sensor_msgs::Joy>("/joystick", 1, &CmdPublishNode::joyCallback, this);
@@ -129,6 +139,11 @@ private:
         global_ang_err_ = local_msgs->data[1];
         is_arrived_ = local_msgs->data[2];
         is_rotating_ = local_msgs->data[3];
+
+        global_x_err_ = local_msgs->data[4];
+        global_y_err_ = local_msgs->data[5];
+        global_theta_ = local_msgs->data[6];
+        global_c_theta_ = local_msgs->data[7];
     }
 		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
 		{
@@ -203,15 +218,38 @@ private:
         }
         else // AMCL Mode
         {
+						double l_xerr,l_yerr;
             // 2.2.1 Not Arrived to the goal position
             if (is_rotating_)
             {
+/*
                 double bounded_ang_err = std::min(abs(double(global_ang_err_)), 1.0);
                 cmd_vel.angular.z = -config_.Kpy_param_rot_ * bounded_ang_err;
                 cmd_vel.linear.x = 0.0;
       	        pub_cmd_.publish(cmd_vel);
+*/
+							l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
+							l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
+              cmd_vel.linear.x = config_.rot_kx_*l_xerr;
+              cmd_vel.angular.z = config_.rot_ky_ *l_xerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
+              if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
+								cmd_vel.angular.x = config_.min_vel_;
+              if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)
+								cmd_vel.angular.z = config_.min_rot_;
+							else if(cmd_vel.angular.z> config_.max_rot_)
+								cmd_vel.angular.z = config_.max_rot_;
+    	        pub_cmd_.publish(cmd_vel);
             }
-            else if(is_arrived_ || fid_area>5000) //to stop QR code 
+						/*else if(fid_area>5000)//to stop QR code 
+						{
+							//
+							is_linetracking = true; //line tracking?
+							cmd_vel.linear.x = 0.0;
+              cmd_vel.linear.z = 0.0;
+              pub_cmd_.publish(cmd_vel);
+              ros::Duration(1).sleep();
+						}*/
+            else if(is_arrived_) 
             {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.linear.z = 0.0;
@@ -222,7 +260,11 @@ private:
             {
                 cmd_vel.linear.x = config_.linear_vel_;
                 cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
-	        //pub_cmd_.publish(cmd_vel);
+				        if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
+									cmd_vel.angular.x = config_.min_vel_;
+				        if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)
+									cmd_vel.angular.z = config_.min_rot_;
+			        //pub_cmd_.publish(cmd_vel);//to using only joystick
             }
         }
 
@@ -256,6 +298,12 @@ private:
         double line_width_max_;
         bool amcl_driving_;
         bool check_obstacles_;
+		double rot_kx_;
+		double rot_ky_;
+		double rot_kt_;
+		double min_vel_;
+		double min_rot_;
+		double max_rot_;
 	} Config;
 	Config config_;
 };
