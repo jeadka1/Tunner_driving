@@ -1,4 +1,4 @@
-<library path="lib/libMaincommandNodeNode">
+<library path="lib/libMaincommandNode">
     <class name="auto_driving/MaincommandNode" type="auto_driving::MaincommandNode" base_class_type="nodelet::Nodelet">
         <description>
             Main command nodelet

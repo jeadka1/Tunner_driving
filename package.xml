@@ -35,6 +35,7 @@
     <nodelet plugin="${prefix}/plugins/aisle_detect_nodelet.xml" />
     <nodelet plugin="${prefix}/plugins/obstacles_nodelet.xml" />
     <nodelet plugin="${prefix}/plugins/aruco_nodelet.xml" />
+    <nodelet plugin="${prefix}/plugins/main_command_nodelet.xml" />
   </export>
 
 
