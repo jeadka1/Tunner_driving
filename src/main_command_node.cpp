@@ -78,7 +78,7 @@ void MaincommandNode::MainCallback(const std_msgs::Bool::ConstPtr &main_msg)
 		{
 			pid_id[0] = getpid();
 			std::cout<<"child process: "<<pid_id[0]<<std::endl;
-			system("cd ~/catkin_ws; roslaunch roverrobotics_driver zero2_teleop.launch");
+			system("cd ~/catkin_ws; roslaunch roverrobotics_driver zero2.launch");
 			start_up = true;
 		}
 		else if (pid ==-1)

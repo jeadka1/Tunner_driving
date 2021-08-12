@@ -28,7 +28,7 @@
 
     <include file="$(find vectornav)/launch/vectornav.launch"/>
     <include file="$(find robot_localization)/launch/ekf_template.launch"/>
-
+    <remap from="/joystick" to="/joy"/>
     
     <!-- LEO_DRIVING PACKAGE-->
     <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /lidar_driving std_msgs/Bool true" output="screen"/>

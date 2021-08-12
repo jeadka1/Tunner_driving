@@ -13,5 +13,5 @@ rot_kx: 0.1
 rot_ky: 0.05
 rot_kt: 1.0
 min_vel: 0.05 # The rover robotics can't move specific low speed
-min_rot: 0.6
+min_rot: 0.7
 max_rot: 3.0

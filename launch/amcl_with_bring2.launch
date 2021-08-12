@@ -8,9 +8,12 @@
     <arg name="map_file" default="/home/cocel/catkin_ws/maps/second_b.yaml"/>
 
     <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
-    <node name="amcl" pkg="amcl" type="amcl" clear_params="true" output="screen">
+    <node name="amcl" pkg="amcl_pose_updater" type="amcl_pose_updater" clear_params="true" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/amcl.yaml"/>
     </node>
+    <!-- aruco-->
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
+    <include file="$(find aruco_detect)/launch/aruco_detect.launch"/>
 
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/>
 

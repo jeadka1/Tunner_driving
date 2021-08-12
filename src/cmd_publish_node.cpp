@@ -240,21 +240,26 @@ private:
 								cmd_vel.angular.z = config_.max_rot_;
     	        pub_cmd_.publish(cmd_vel);
             }
-						/*else if(fid_area>5000)//to stop QR code 
+						else if(fid_area>5000)//to stop QR code 
 						{
 							//
 							is_linetracking = true; //line tracking?
 							cmd_vel.linear.x = 0.0;
               cmd_vel.linear.z = 0.0;
               pub_cmd_.publish(cmd_vel);
-              ros::Duration(1).sleep();
-						}*/
+							ROS_INFO("To stop by using QR_dection: %f", fid_area);
+							ROS_INFO("To stop by using QR_dection: %f", fid_area);
+							ROS_INFO("To stop by using QR_dection: %f", fid_area);
+							ROS_INFO("To stop by using QR_dection: %f", fid_area);
+							fid_area =0;
+							//ros::Duration(1).sleep();
+						}
             else if(is_arrived_) 
             {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.linear.z = 0.0;
                 pub_cmd_.publish(cmd_vel);
-                ros::Duration(1).sleep();
+                //ros::Duration(1).sleep();
             }
             else 
             {
