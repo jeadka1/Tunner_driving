@@ -74,20 +74,19 @@ sudo apt-get install ros-melodic-amcl
 * simulation.launch : run with bag file
 
 ### parameters for gmapping and amcl
-<Overall parameter>
-* update_min_d: 파티클을 업데이트 하기위해 필요한 translation movement (작을 수록 포즈 계산을 자주 한다)
-* update_min_a: 티클을 업데이트 하기위해 필요한 rotational movement 
-* min_particles / max_particles: 많을 수록 신뢰도가 높아지지만 계산 처리가 늦어질 수 있음
+* ####  Overall parameter
+	* update_min_d: 파티클을 업데이트 하기위해 필요한 translation movement (작을 수록 포즈 계산을 자주 한다)
+	* update_min_a: 티클을 업데이트 하기위해 필요한 rotational movement 
+	* min_particles / max_particles: 많을 수록 신뢰도가 높아지지만 계산 처리가 늦어질 수 있음
 
  
 
-<Odometry model parameter>
-
-노이즈를 키울 수록 파티클 샘플링을 넓은 영역에서 한다
-* odom_alpha1: rotation에 대한 rotation 노이즈 (로봇이 회전을 했을 때 생기는 rotation 노이즈) 
-* odom_alpha2: tranlation에 대한 rotation 노이즈 (로봇이 회전을 했을 때 생기는 translation 노이즈)
-* odom_alpha3: translation에 대한 translation 노이즈
-* odom_alpha4: rotation에 대한 rotation 노이즈
+* #### Odometry model parameter
+	*노이즈를 키울 수록 파티클 샘플링을 넓은 영역에서 한다
+	* odom_alpha1: rotation에 대한 rotation 노이즈 (로봇이 회전을 했을 때 생기는 rotation 노이즈) 
+	* odom_alpha2: tranlation에 대한 rotation 노이즈 (로봇이 회전을 했을 때 생기는 translation 노이즈)
+	* odom_alpha3: translation에 대한 translation 노이즈
+	* odom_alpha4: rotation에 대한 rotation 노이즈
 
 __Running__
 ```bash

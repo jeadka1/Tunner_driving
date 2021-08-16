@@ -27,6 +27,7 @@ class CmdPublishNode : public nodelet::Nodelet {
 		float global_x_err_ =0;  
 		float global_y_err_ =0,global_theta_=0.0,global_c_theta_=0.0;
 
+		float g_x_err_=0, g_y_err_=0, g_ctheta_ =0;
     
     // Aisle
     float line_start_y_ = -30; 
@@ -71,6 +72,7 @@ private:
         nhp.param("min_vel", config_.min_vel_, 0.05);
         nhp.param("min_rot", config_.min_rot_, 0.05);
         nhp.param("max_rot", config_.max_rot_, 0.05);
+        nhp.param("straight", config_.straight_, false);
 
         // // Subscriber & Publisher
         sub_joy_ = nhp.subscribe<sensor_msgs::Joy>("/joystick", 1, &CmdPublishNode::joyCallback, this);
@@ -144,6 +146,10 @@ private:
         global_y_err_ = local_msgs->data[5];
         global_theta_ = local_msgs->data[6];
         global_c_theta_ = local_msgs->data[7];
+
+        g_x_err_ = local_msgs->data[8];
+        g_y_err_ = local_msgs->data[9];
+        g_ctheta_ = local_msgs->data[10];
     }
 		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
 		{
@@ -230,6 +236,8 @@ private:
 */
 							l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
 							l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
+							std::cout<< "l_x: " <<l_xerr <<", l_y:" << l_yerr <<std::endl;
+
               cmd_vel.linear.x = config_.rot_kx_*l_xerr;
               cmd_vel.angular.z = config_.rot_ky_ *l_xerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
               if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
@@ -238,7 +246,7 @@ private:
 								cmd_vel.angular.z = config_.min_rot_;
 							else if(cmd_vel.angular.z> config_.max_rot_)
 								cmd_vel.angular.z = config_.max_rot_;
-    	        pub_cmd_.publish(cmd_vel);
+    	        //pub_cmd_.publish(cmd_vel);
             }
 						else if(fid_area>5000)//to stop QR code 
 						{
@@ -246,31 +254,51 @@ private:
 							is_linetracking = true; //line tracking?
 							cmd_vel.linear.x = 0.0;
               cmd_vel.linear.z = 0.0;
-              pub_cmd_.publish(cmd_vel);
+              //pub_cmd_.publish(cmd_vel);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							fid_area =0;
-							//ros::Duration(1).sleep();
+							//ros::Duration(1).sleep();//??????
 						}
-            else if(is_arrived_) 
+						else if(is_arrived_) 
             {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.linear.z = 0.0;
-                pub_cmd_.publish(cmd_vel);
-                //ros::Duration(1).sleep();
             }
             else 
             {
+							double straight_l_xerr, straight_l_yerr;
+							straight_l_xerr= g_x_err_ *cos(g_ctheta_) + g_y_err_ *sin(g_ctheta_);
+							straight_l_yerr= -g_x_err_ *sin(g_ctheta_) + g_y_err_ *cos(g_ctheta_);
+							//std::cout<< "l_x: " <<straight_l_xerr <<", l_y:" << straight_l_yerr <<std::endl;
+							if(config_.straight_) // straight test
+							{
+                cmd_vel.linear.x = config_.linear_vel_;
+                cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr;
+ 
+				        if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
+									cmd_vel.angular.x = config_.min_vel_;
+				        //pub_cmd_.publish(cmd_vel);
+							}
+							else // tunnel AMCL test
+							{
                 cmd_vel.linear.x = config_.linear_vel_;
                 cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
 				        if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
 									cmd_vel.angular.x = config_.min_vel_;
-				        if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)
-									cmd_vel.angular.z = config_.min_rot_;
-			        //pub_cmd_.publish(cmd_vel);//to using only joystick
-            }
+				        //if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0) //when stragting ,do not move
+									//cmd_vel.angular.z = config_.min_rot_;
+
+							}
+            }/*
+						if(is_arrived_) 
+            {
+                cmd_vel.linear.x = 0.0;
+                cmd_vel.linear.z = 0.0;
+            }*/
+		        pub_cmd_.publish(cmd_vel);
         }
 
     }
@@ -309,6 +337,7 @@ private:
 		double min_vel_;
 		double min_rot_;
 		double max_rot_;
+		bool straight_;
 	} Config;
 	Config config_;
 };

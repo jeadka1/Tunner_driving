@@ -59,6 +59,10 @@ private:
 			localization_msgs.data.push_back(0); // global_y_err
 			localization_msgs.data.push_back(0); // global_theta_err
 			localization_msgs.data.push_back(0); // global_c_theta_err
+
+			localization_msgs.data.push_back(0); // 
+			localization_msgs.data.push_back(0); // 
+			localization_msgs.data.push_back(0); // 
 			pub_localization_.publish(localization_msgs);
 			return;
 		}
@@ -76,7 +80,31 @@ private:
 		std::cout << "curr (x,y): " <<"(" <<pose_msg->pose.pose.position.x << ", " << pose_msg->pose.pose.position.y << ")" <<std::endl;
 		std::cout << "distance :" << global_dist_err <<std::endl;
 		std::cout <<" " <<std::endl;
-		
+
+
+		//instead of in else loop
+		tf::StampedTransform transform;
+		tf::TransformListener tf_listener;
+		if (!tf_listener.waitForTransform("/odom", "/base_link", ros::Time(0), ros::Duration(0.5), ros::Duration(0.01))) 
+		{
+			ROS_ERROR("Unable to get pose from TF");
+			return;
+		}
+		try 
+		{
+			tf_listener.lookupTransform("/odom", "/base_link", ros::Time(0), transform);
+		}
+		catch (const tf::TransformException &e) {
+			ROS_ERROR("%s",e.what());
+		} 			
+		tf2::Quaternion orientation (transform.getRotation().x(), transform.getRotation().y(), transform.getRotation().z(), transform.getRotation().w());
+		tf2::Matrix3x3 m(orientation);
+
+		double roll, pitch, yaw;
+		m.getRPY(roll, pitch, yaw);
+		g_x_err= global_x_err;
+		g_y_err= global_y_err;
+		g_ctheta = yaw;
 		// 2.1 Not Arrived to the goal position
 		if (global_dist_err > config_.global_dist_boundary_ && !is_rotating_) 
 		{
@@ -88,7 +116,7 @@ private:
 		else
 		{
 			is_arrived = true;
-			tf::StampedTransform transform;
+			/*tf::StampedTransform transform;
 			tf::TransformListener tf_listener;
 			if (!tf_listener.waitForTransform("/odom", "/base_link", ros::Time(0), ros::Duration(0.5), ros::Duration(0.01))) 
 			{
@@ -103,10 +131,11 @@ private:
 				ROS_ERROR("%s",e.what());
 			} 				
 			// angle
+			
 			tf2::Quaternion orientation (transform.getRotation().x(), transform.getRotation().y(), transform.getRotation().z(), transform.getRotation().w());
 			tf2::Matrix3x3 m(orientation);
 			double roll, pitch, yaw;
-			m.getRPY(roll, pitch, yaw);
+			m.getRPY(roll, pitch, yaw);*/
 		
 			if(!is_rotating_) 
 			{
@@ -119,7 +148,7 @@ private:
 				else if(goal_yaw < -M_PI)
 					goal_yaw += 2*M_PI;
 				is_rotating_ = true;
-				ros::Duration(1).sleep();
+				//ros::Duration(1).sleep();
 			}
 			static_x_err = static_x - pose_msg->pose.pose.position.x;
 			static_y_err = static_y - pose_msg->pose.pose.position.y;
@@ -152,6 +181,10 @@ private:
 		localization_msgs.data.push_back(static_y_err);
 		localization_msgs.data.push_back(static_t);
 		localization_msgs.data.push_back(static_ct);
+
+		localization_msgs.data.push_back(g_x_err);
+		localization_msgs.data.push_back(g_y_err);
+		localization_msgs.data.push_back(g_ctheta);
 		pub_localization_.publish(localization_msgs);
 	}
 
@@ -167,6 +200,7 @@ private:
 	int goal_count_ = 0;    
 	double goal_yaw = M_PI;	
 	double static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
+	double g_x_err,g_y_err, g_ctheta;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;

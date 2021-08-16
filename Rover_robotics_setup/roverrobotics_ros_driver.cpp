@@ -1,4 +1,5 @@
 #include "roverrobotics_ros_driver.hpp"
+//#include <signal.h>
 namespace RoverRobotics {
 
 RobotDriver::RobotDriver(ros::NodeHandle *nh) {
@@ -200,6 +201,7 @@ RobotDriver::RobotDriver(ros::NodeHandle *nh) {
       estop_reset_topic_, 10, &RobotDriver::callbackEstopReset, this);
   robot_info_subscriber_ = nh->subscribe(robot_info_request_topic_, 10,
                                          &RobotDriver::callbackInfo, this);
+	initial_pos_subscriber_ = nh->subscribe<std_msgs::Bool> ("/odominit", 1, &RobotDriver::odominit, this);
   robot_info_publisher_ = nh->advertise<std_msgs::Float32MultiArray>(
       robot_info_topic_, 1);  // publish robot_unique info
   robot_status_publisher_ =
@@ -289,7 +291,13 @@ void RobotDriver::publishOdometry(const ros::TimerEvent &event) {
 
   dt = now_time - past_time;
   past_time = now_time;
-
+	if(odom_init_flag)
+	{
+		odom_init_flag =0;
+		pos_x = 0;
+		pos_y = 0;
+		theta = 0;
+	}
 	pos_x = pos_x + data.linear_vel * cos(theta) * dt;
 	pos_y = pos_y + data.linear_vel * sin(theta) * dt;
 	theta = theta +  data.angular_vel * dt*2/3;
@@ -391,6 +399,10 @@ void RobotDriver::callbackInfo(const std_msgs::Bool::ConstPtr &msg) {
   }
 }
 
+void RobotDriver::odominit(const std_msgs::Bool::ConstPtr &msg) {
+	odom_init_flag = 1;
+}
+
 void RobotDriver::callbackEstopTrigger(const std_msgs::Bool::ConstPtr &msg) {
   if (msg->data == true) {
     estop_state_ = true;
@@ -415,6 +427,7 @@ RobotDriver::~RobotDriver() {}
 }  // namespace RoverRobotics
 int main(int argc, char **argv) {
   ros::init(argc, argv, "RoverRobotics_Driver_Wrapper_Node");
+//  ros::init(argc, argv, "{$node_name}", ros::init_options::NoSigintHandler);//"RoverRobotics_Driver_Wrapper_Node");
   ros::NodeHandle nh;
   ros::AsyncSpinner spinner(0);  // Prevent Callback bottleneck
   spinner.start();
