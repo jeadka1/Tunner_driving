@@ -28,6 +28,9 @@ class CmdPublishNode : public nodelet::Nodelet {
 		float global_y_err_ =0,global_theta_=0.0,global_c_theta_=0.0;
 
 		float g_x_err_=0, g_y_err_=0, g_ctheta_ =0;
+
+		bool init_call = false;
+		bool once_flag = false;
     
     // Aisle
     float line_start_y_ = -30; 
@@ -71,7 +74,8 @@ private:
         nhp.param("rot_kt", config_.rot_kt_, 0.3);
         nhp.param("min_vel", config_.min_vel_, 0.05);
         nhp.param("min_rot", config_.min_rot_, 0.05);
-        nhp.param("max_rot", config_.max_rot_, 0.05);
+        nhp.param("max_vel", config_.max_vel_, 0.5);
+        nhp.param("max_rot", config_.max_rot_, 1.0);
         nhp.param("straight", config_.straight_, false);
 
         // // Subscriber & Publisher
@@ -150,6 +154,7 @@ private:
         g_x_err_ = local_msgs->data[8];
         g_y_err_ = local_msgs->data[9];
         g_ctheta_ = local_msgs->data[10];
+				init_call = local_msgs->data[11];
     }
 		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
 		{
@@ -159,6 +164,18 @@ private:
 
     void publishCmd(const std_msgs::Bool::ConstPtr &driving_start)
     {
+				//init_call first
+				if(init_call && once_flag)
+				{
+					//system("rosservice call /odom_init 0.0 0.0 0.0");
+					//system("rosservice call /pose_update 0.0 0.0 0.0");
+					ROS_INFO("initialized");
+					once_flag = false;
+				}
+				else if( init_call ==false)
+				{
+					once_flag = true;
+				}
         //// 1. Joystick Driving
         if(joy_driving_) 
 		    return;
@@ -224,29 +241,28 @@ private:
         }
         else // AMCL Mode
         {
-						double l_xerr,l_yerr;
+
             // 2.2.1 Not Arrived to the goal position
             if (is_rotating_)
             {
-/*
-                double bounded_ang_err = std::min(abs(double(global_ang_err_)), 1.0);
-                cmd_vel.angular.z = -config_.Kpy_param_rot_ * bounded_ang_err;
-                cmd_vel.linear.x = 0.0;
-      	        pub_cmd_.publish(cmd_vel);
-*/
+							double l_xerr,l_yerr;
 							l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
 							l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
-							std::cout<< "l_x: " <<l_xerr <<", l_y:" << l_yerr <<std::endl;
+							std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
 
               cmd_vel.linear.x = config_.rot_kx_*l_xerr;
               cmd_vel.angular.z = config_.rot_ky_ *l_xerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
-              if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
-								cmd_vel.angular.x = config_.min_vel_;
-              if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)
+
+							//Saturation parts due to Zero's deadline from VESC
+							//Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
+              if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
 								cmd_vel.angular.z = config_.min_rot_;
 							else if(cmd_vel.angular.z> config_.max_rot_)
 								cmd_vel.angular.z = config_.max_rot_;
-    	        //pub_cmd_.publish(cmd_vel);
+              if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
+								cmd_vel.angular.z = -config_.min_rot_;
+							else if(cmd_vel.angular.z< -config_.max_rot_)
+								cmd_vel.angular.z = -config_.max_rot_;
             }
 						else if(fid_area>5000)//to stop QR code 
 						{
@@ -254,13 +270,11 @@ private:
 							is_linetracking = true; //line tracking?
 							cmd_vel.linear.x = 0.0;
               cmd_vel.linear.z = 0.0;
-              //pub_cmd_.publish(cmd_vel);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							ROS_INFO("To stop by using QR_dection: %f", fid_area);
 							fid_area =0;
-							//ros::Duration(1).sleep();//??????
 						}
 						else if(is_arrived_) 
             {
@@ -275,29 +289,32 @@ private:
 							//std::cout<< "l_x: " <<straight_l_xerr <<", l_y:" << straight_l_yerr <<std::endl;
 							if(config_.straight_) // straight test
 							{
-                cmd_vel.linear.x = config_.linear_vel_;
+                cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
+                //cmd_vel.linear.x = config_.linear_vel_;
                 cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr;
- 
-				        if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
-									cmd_vel.angular.x = config_.min_vel_;
-				        //pub_cmd_.publish(cmd_vel);
+
+ 								//Saturation parts due to Zero's deadline from VESC
+								if(cmd_vel.linear.x> config_.max_vel_)
+									cmd_vel.linear.x = config_.max_vel_;
+								else if(cmd_vel.linear.x< -config_.max_vel_)
+									cmd_vel.linear.x = -config_.max_vel_;				        				        
+
+								if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
+									cmd_vel.linear.x = config_.min_vel_;
+				        //Saturation of 'cmd_vel.angular.z' doesn't need because when the y fits, it's not necessary to move
 							}
 							else // tunnel AMCL test
 							{
+                //cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
                 cmd_vel.linear.x = config_.linear_vel_;
                 cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
-				        if(cmd_vel.angular.x< config_.min_vel_ && cmd_vel.angular.x>0)
-									cmd_vel.angular.x = config_.min_vel_;
-				        //if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0) //when stragting ,do not move
-									//cmd_vel.angular.z = config_.min_rot_;
 
+							//Saturation parts due to Zero's deadline from VESC
+				        if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
+									cmd_vel.linear.x = config_.min_vel_;
+							//Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
 							}
-            }/*
-						if(is_arrived_) 
-            {
-                cmd_vel.linear.x = 0.0;
-                cmd_vel.linear.z = 0.0;
-            }*/
+            }
 		        pub_cmd_.publish(cmd_vel);
         }
 
@@ -336,6 +353,7 @@ private:
 		double rot_kt_;
 		double min_vel_;
 		double min_rot_;
+		double max_vel_;
 		double max_rot_;
 		bool straight_;
 	} Config;

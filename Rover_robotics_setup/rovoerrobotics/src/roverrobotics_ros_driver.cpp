@@ -1,5 +1,6 @@
 #include "roverrobotics_ros_driver.hpp"
 //#include <signal.h>
+
 namespace RoverRobotics {
 
 RobotDriver::RobotDriver(ros::NodeHandle *nh) {
@@ -201,7 +202,7 @@ RobotDriver::RobotDriver(ros::NodeHandle *nh) {
       estop_reset_topic_, 10, &RobotDriver::callbackEstopReset, this);
   robot_info_subscriber_ = nh->subscribe(robot_info_request_topic_, 10,
                                          &RobotDriver::callbackInfo, this);
-	initial_pos_subscriber_ = nh->subscribe<std_msgs::Bool> ("/odominit", 1, &RobotDriver::odominit, this);
+	initial_pos_subscriber_ = nh->advertiseService("odom_init", &RobotDriver::odominit, this);
   robot_info_publisher_ = nh->advertise<std_msgs::Float32MultiArray>(
       robot_info_topic_, 1);  // publish robot_unique info
   robot_status_publisher_ =
@@ -399,7 +400,9 @@ void RobotDriver::callbackInfo(const std_msgs::Bool::ConstPtr &msg) {
   }
 }
 
-void RobotDriver::odominit(const std_msgs::Bool::ConstPtr &msg) {
+//void RobotDriver::odominit(const std_msgs::Bool::ConstPtr &msg) {
+bool RobotDriver::odominit(roverrobotics_driver::UpdateOdom::Request& req, roverrobotics_driver::UpdateOdom::Response& res)
+{
 	odom_init_flag = 1;
 }
 

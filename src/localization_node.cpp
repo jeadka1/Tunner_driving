@@ -63,12 +63,30 @@ private:
 			localization_msgs.data.push_back(0); // 
 			localization_msgs.data.push_back(0); // 
 			localization_msgs.data.push_back(0); // 
+
+			localization_msgs.data.push_back(false); // init_flag for odom
 			pub_localization_.publish(localization_msgs);
 			return;
 		}
 		bool is_arrived = false;
 		current_goal_ = goal_set_[goal_index_ % goal_count_];	
 		ROS_INFO_ONCE("Goal is set: %d, %d", current_goal_.pose.position.x, current_goal_.pose.position.y);
+		
+		//Initialize when the mobile robot arrives at home		
+		//TODO It should operate with QR code
+		if (goal_index_ % goal_count_ ==0)// && init_flag_==false)
+		{
+			// Only once when it's arrived at home.
+			init_start_ = true;
+			//system("rosservice call /odom_init 0.0 0.0 0.0");
+			//system("rosservice call /pose_update 0.0 0.0 0.0");
+		}
+		else
+		{
+			//init_flag_ = false;
+			init_start_ = false;
+		}
+		
 
 		// 1. Calculate Global Error
 		float global_x_err = current_goal_.pose.position.x - pose_msg->pose.pose.position.x;
@@ -185,6 +203,8 @@ private:
 		localization_msgs.data.push_back(g_x_err);
 		localization_msgs.data.push_back(g_y_err);
 		localization_msgs.data.push_back(g_ctheta);
+
+		localization_msgs.data.push_back(init_start_);
 		pub_localization_.publish(localization_msgs);
 	}
 
@@ -194,6 +214,9 @@ private:
 	ros::Publisher pub_localization_;
 	
 	bool is_rotating_ = false;
+	bool init_flag_ = false;
+	bool init_start_ = false;
+
 
 	// GOAL
 	int goal_index_ = 0;
@@ -201,6 +224,7 @@ private:
 	double goal_yaw = M_PI;	
 	double static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
 	double g_x_err,g_y_err, g_ctheta;
+
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;
