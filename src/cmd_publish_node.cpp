@@ -27,7 +27,8 @@ class CmdPublishNode : public nodelet::Nodelet {
 		float global_x_err_ =0;  
 		float global_y_err_ =0,global_theta_=0.0,global_c_theta_=0.0;
 
-		float g_x_err_=0, g_y_err_=0, g_ctheta_ =0;
+		float g_x_err_=0, g_y_err_=0,g_rtheta_=0, g_ctheta_ =0;
+		bool sleep_flag =false;
 
 		bool init_call = false;
 		bool once_flag = false;
@@ -77,6 +78,7 @@ private:
         nhp.param("max_vel", config_.max_vel_, 0.5);
         nhp.param("max_rot", config_.max_rot_, 1.0);
         nhp.param("straight", config_.straight_, false);
+        nhp.param("Kpy_param_straight", config_.Kpy_param_straight_, 1.1);
 
         // // Subscriber & Publisher
         sub_joy_ = nhp.subscribe<sensor_msgs::Joy>("/joystick", 1, &CmdPublishNode::joyCallback, this);
@@ -96,18 +98,24 @@ private:
         //Button "B" : driving mode change -->   even: auto, odd: joy control
         if (joy_msg->buttons[1] == 1)	
         {
-            std::cout<<"B push"<<std::endl;
-            joy_driving_ = !joy_driving_;
-            ros::Duration(0.5).sleep();
+          std::cout<<"(push) B or O "<<std::endl;
+          joy_driving_ = !joy_driving_;
+          ros::Duration(0.5).sleep();
         }
-	if(joy_driving_)
-	{ 
-		geometry_msgs::Twist cmd_vel;
-		cmd_vel.linear.x = joy_msg -> axes[1] * 0.5;
-		cmd_vel.angular.z = joy_msg -> axes[0] * 0.5;
-		pub_cmd_.publish(cmd_vel);
-		return;
-	}
+				if(joy_msg->buttons[0] == 1)	 //
+				{
+          std::cout<<"(push) A or X "<<std::endl;
+					//system("reboot");
+				}
+				if(joy_driving_)
+				{ 
+					geometry_msgs::Twist cmd_vel;
+					cmd_vel.linear.x = joy_msg -> axes[1] * 0.5;
+					cmd_vel.angular.z = joy_msg -> axes[0] * 0.5;
+					pub_cmd_.publish(cmd_vel);
+					return;
+				}
+				
     }
 
 	void obsCallback(const std_msgs::Float32MultiArray::ConstPtr& dists_msg)
@@ -153,8 +161,10 @@ private:
 
         g_x_err_ = local_msgs->data[8];
         g_y_err_ = local_msgs->data[9];
-        g_ctheta_ = local_msgs->data[10];
-				init_call = local_msgs->data[11];
+        g_rtheta_ = local_msgs->data[10];
+        g_ctheta_ = local_msgs->data[11];
+
+				init_call = local_msgs->data[12];
     }
 		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
 		{
@@ -241,7 +251,6 @@ private:
         }
         else // AMCL Mode
         {
-
             // 2.2.1 Not Arrived to the goal position
             if (is_rotating_)
             {
@@ -280,18 +289,21 @@ private:
             {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.linear.z = 0.0;
+								sleep_flag = true;
             }
             else 
             {
 							double straight_l_xerr, straight_l_yerr;
 							straight_l_xerr= g_x_err_ *cos(g_ctheta_) + g_y_err_ *sin(g_ctheta_);
 							straight_l_yerr= -g_x_err_ *sin(g_ctheta_) + g_y_err_ *cos(g_ctheta_);
+
+							double comy_yerr = -g_x_err_ *sin(g_rtheta_) + g_y_err_ *cos(g_rtheta_);
 							//std::cout<< "l_x: " <<straight_l_xerr <<", l_y:" << straight_l_yerr <<std::endl;
 							if(config_.straight_) // straight test
 							{
                 cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
                 //cmd_vel.linear.x = config_.linear_vel_;
-                cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr;
+                cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr + config_.Kpy_param_straight_*comy_yerr;
 
  								//Saturation parts due to Zero's deadline from VESC
 								if(cmd_vel.linear.x> config_.max_vel_)
@@ -301,7 +313,19 @@ private:
 
 								if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
 									cmd_vel.linear.x = config_.min_vel_;
-				        //Saturation of 'cmd_vel.angular.z' doesn't need because when the y fits, it's not necessary to move
+								else if(cmd_vel.linear.x> -config_.min_vel_ && cmd_vel.linear.x<0)
+									cmd_vel.linear.x = -config_.min_vel_;
+
+				        //Saturation to move correctly
+/*
+								if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
+									cmd_vel.angular.z = config_.min_rot_;
+								else if(cmd_vel.angular.z> config_.max_rot_)
+									cmd_vel.angular.z = config_.max_rot_;
+		            if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
+									cmd_vel.angular.z = -config_.min_rot_;
+								else if(cmd_vel.angular.z< -config_.max_rot_)
+									cmd_vel.angular.z = -config_.max_rot_;*/
 							}
 							else // tunnel AMCL test
 							{
@@ -316,6 +340,11 @@ private:
 							}
             }
 		        pub_cmd_.publish(cmd_vel);
+						if(sleep_flag)
+						{
+							sleep_flag=false;
+							ros::Duration(1).sleep();
+						}
         }
 
     }
@@ -356,6 +385,7 @@ private:
 		double max_vel_;
 		double max_rot_;
 		bool straight_;
+		double Kpy_param_straight_;
 	} Config;
 	Config config_;
 };

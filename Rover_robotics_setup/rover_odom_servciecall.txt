@@ -1,0 +1,16 @@
+Add to Cmake below sentence
+
+-------------------------------------------------------
+add_service_files(
+  DIRECTORY srv
+  FILES
+  UpdateOdom.srv
+)
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+
+add_dependencies(roverrobotics_driver_node roverrobotics_driver_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
+
+-------------------------------------------------------

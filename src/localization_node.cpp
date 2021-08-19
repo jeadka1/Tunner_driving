@@ -62,6 +62,7 @@ private:
 
 			localization_msgs.data.push_back(0); // 
 			localization_msgs.data.push_back(0); // 
+			localization_msgs.data.push_back(0); //
 			localization_msgs.data.push_back(0); // 
 
 			localization_msgs.data.push_back(false); // init_flag for odom
@@ -122,6 +123,7 @@ private:
 		m.getRPY(roll, pitch, yaw);
 		g_x_err= global_x_err;
 		g_y_err= global_y_err;
+		g_rtheta = atan2(global_y_err,global_x_err);
 		g_ctheta = yaw;
 		// 2.1 Not Arrived to the goal position
 		if (global_dist_err > config_.global_dist_boundary_ && !is_rotating_) 
@@ -202,6 +204,7 @@ private:
 
 		localization_msgs.data.push_back(g_x_err);
 		localization_msgs.data.push_back(g_y_err);
+		localization_msgs.data.push_back(g_rtheta);
 		localization_msgs.data.push_back(g_ctheta);
 
 		localization_msgs.data.push_back(init_start_);
@@ -223,7 +226,7 @@ private:
 	int goal_count_ = 0;    
 	double goal_yaw = M_PI;	
 	double static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
-	double g_x_err,g_y_err, g_ctheta;
+	double g_x_err,g_y_err, g_rtheta,g_ctheta;
 
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
