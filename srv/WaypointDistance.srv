@@ -1,0 +1,4 @@
+underground_msgs/Mission mission
+---
+float32[] distances
+bool valid

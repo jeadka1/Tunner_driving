@@ -1,0 +1,8 @@
+uint32 width
+uint32 height
+string ip
+uint16 port
+uint32 bitrate
+---
+bool success
+int32 error_code

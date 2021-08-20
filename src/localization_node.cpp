@@ -13,6 +13,14 @@
 #include <std_msgs/Float32.h>
 #include <std_msgs/Float32MultiArray.h>
 
+enum MODE_{
+	MOBILE_STOP,
+	MOBILE_MOVING,
+	MOBILE_ROTATING,
+	MOBILE_ALIGN,
+};
+
+
 namespace auto_driving {
 
 class LocalizationNode : public nodelet::Nodelet {
@@ -52,7 +60,8 @@ private:
 			ROS_INFO_ONCE("Waiting for inserting goal... ");
 			localization_msgs.data.push_back(10000); // global_dist_err
 			localization_msgs.data.push_back(10000); // global_ang_err
-			localization_msgs.data.push_back(true); // is_arrived -> Not moving
+			localization_msgs.data.push_back(0); // Postech mode
+			//localization_msgs.data.push_back(true); // is_arrived -> Not moving
 			localization_msgs.data.push_back(false); // is_rotating
 
 			localization_msgs.data.push_back(0); // global_x_err
@@ -130,11 +139,17 @@ private:
 		{
 			is_arrived = false;
 			global_ang_err = M_PI;
+			postect_mode = MOBILE_MOVING;//moving
 		}
 	
 		// 2.2 Arrived to the goal position
 		else
 		{
+			if(arrvial_flag)
+			{
+				arrvial_flag = false;
+				postect_mode = MOBILE_STOP;//to finish rotate (stop)
+			}
 			is_arrived = true;
 			/*tf::StampedTransform transform;
 			tf::TransformListener tf_listener;
@@ -168,7 +183,7 @@ private:
 				else if(goal_yaw < -M_PI)
 					goal_yaw += 2*M_PI;
 				is_rotating_ = true;
-				//ros::Duration(1).sleep();
+				postect_mode =MOBILE_ROTATING; //rotating
 			}
 			static_x_err = static_x - pose_msg->pose.pose.position.x;
 			static_y_err = static_y - pose_msg->pose.pose.position.y;
@@ -190,11 +205,13 @@ private:
 				goal_index_++;
 				is_rotating_ = false;
 				is_arrived = false;
+				postect_mode = MOBILE_STOP;//to finish rotate (stop)
 			}
 		}
 		localization_msgs.data.push_back(global_dist_err);
 		localization_msgs.data.push_back(global_ang_err);
-		localization_msgs.data.push_back(is_arrived);
+		localization_msgs.data.push_back(postect_mode);
+		//localization_msgs.data.push_back(is_arrived);
 		localization_msgs.data.push_back(is_rotating_);
 
 		localization_msgs.data.push_back(static_x_err);
@@ -227,7 +244,8 @@ private:
 	double goal_yaw = M_PI;	
 	double static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
 	double g_x_err,g_y_err, g_rtheta,g_ctheta;
-
+	int postect_mode;
+	bool arrvial_flag =true;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;

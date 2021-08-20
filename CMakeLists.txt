@@ -11,13 +11,19 @@ find_package(catkin REQUIRED COMPONENTS
         tf2_sensor_msgs
         pcl_conversions
         laser_geometry
+	message_generation
+	#std_msgs
+	#actionlib_msgs
+	#geometry_msgs
+	#nav_msgs
         )
 find_package(PCL REQUIRED)
+## Generate messages in the 'msg' folder
 
 catkin_package(
         #  INCLUDE_DIRS include
         LIBRARIES LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
-        CATKIN_DEPENDS nodelet roscpp sensor_msgs tf geometry_msgs fiducial_msgs pcl_conversions laser_geometry
+        CATKIN_DEPENDS nodelet roscpp sensor_msgs tf geometry_msgs fiducial_msgs pcl_conversions laser_geometry 
         DEPENDS PCL
 )
 
@@ -59,6 +65,7 @@ add_library(MaincommandNode src/main_command_node.cpp)
 add_dependencies(MaincommandNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(MaincommandNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 
+
 add_library(${PROJECT_NAME}_nodelets
   src/localization_node.cpp
   src/aisle_detect_node.cpp
@@ -81,3 +88,4 @@ install(DIRECTORY plugins
 
 install(DIRECTORY launch
         DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+

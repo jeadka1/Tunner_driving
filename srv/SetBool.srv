@@ -1,0 +1,4 @@
+bool data
+---
+bool success
+int32 error_code

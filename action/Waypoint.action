@@ -1,0 +1,13 @@
+# Goal
+underground_msgs/Mission mission
+float32[] distances
+bool forward_direction
+
+---
+# result
+bool success
+
+---
+# Feedback
+float32 current_item_remain_distance
+float32 final_item_remain_distance
