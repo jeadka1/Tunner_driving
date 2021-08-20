@@ -14,10 +14,24 @@
 #include <std_msgs/Float32MultiArray.h>
 
 enum MODE_{
-	MOBILE_STOP,
-	MOBILE_MOVING,
-	MOBILE_ROTATING,
-	MOBILE_ALIGN,
+//	MOBILE_STOP,
+	//MOBILE_MOVING,
+	//MOBILE_ROTATING,
+	//MOBILE_ALIGN,
+	CHARGE_MODE,
+	STANDBY_MODE,
+	DOCKING_MODE,
+	DOCK_IN_MODE,
+	DOCK_OUT_MODE,
+	DOCK_OUT_PRE_MODE,
+	DOCK_IN_PRE_MODE,
+	AUTO_PRE_IMAGE_MODE,
+	AUTO_PRE_LIDAR_MODE,
+	AUTO_IMAGE_MODE,
+	AUTO_LIDAR_MODE,
+	MANUAL_MODE,
+	STOP_MODE,
+	TURN_MODE,
 };
 
 
@@ -139,7 +153,7 @@ private:
 		{
 			is_arrived = false;
 			global_ang_err = M_PI;
-			postect_mode = MOBILE_MOVING;//moving
+			postect_mode = AUTO_LIDAR_MODE;//moving
 		}
 	
 		// 2.2 Arrived to the goal position
@@ -148,7 +162,7 @@ private:
 			if(arrvial_flag)
 			{
 				arrvial_flag = false;
-				postect_mode = MOBILE_STOP;//to finish rotate (stop)
+				postect_mode = STOP_MODE;//to finish rotate (stop)
 			}
 			is_arrived = true;
 			/*tf::StampedTransform transform;
@@ -183,7 +197,7 @@ private:
 				else if(goal_yaw < -M_PI)
 					goal_yaw += 2*M_PI;
 				is_rotating_ = true;
-				postect_mode =MOBILE_ROTATING; //rotating
+				postect_mode =TURN_MODE; //rotating
 			}
 			static_x_err = static_x - pose_msg->pose.pose.position.x;
 			static_y_err = static_y - pose_msg->pose.pose.position.y;
@@ -203,9 +217,9 @@ private:
 			{
 				std::cout<<"finish rotation"<<std::endl;
 				goal_index_++;
-				is_rotating_ = false;
+				is_rotating_ = false; //To go another position 
 				is_arrived = false;
-				postect_mode = MOBILE_STOP;//to finish rotate (stop)
+				postect_mode = STOP_MODE;//to finish rotate (stop) (AUTO_PRE_LIDAR_MODE)
 			}
 		}
 		localization_msgs.data.push_back(global_dist_err);

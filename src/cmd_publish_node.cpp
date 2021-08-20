@@ -8,15 +8,31 @@
 #include <std_msgs/Float32.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/Int32.h>
+#include <std_msgs/Empty.h>
 #include <geometry_msgs/Twist.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
 #include <algorithm>
 enum MODE_{
-	MOBILE_STOP,
-	MOBILE_MOVING,
-	MOBILE_ROTATING,
-	MOBILE_ALIGN,
+//	MOBILE_STOP,
+//	MOBILE_MOVING,
+//	MOBILE_ROTATING,
+//	MOBILE_ALIGN,
+	CHARGE_MODE,
+	STANDBY_MODE,
+	DOCKING_MODE,
+	DOCK_IN_MODE,
+	DOCK_OUT_MODE,
+	DOCK_OUT_PRE_MODE,
+	DOCK_IN_PRE_MODE,
+	AUTO_PRE_IMAGE_MODE,
+	AUTO_PRE_LIDAR_MODE,
+	AUTO_IMAGE_MODE,
+	AUTO_LIDAR_MODE,
+	MANUAL_MODE,
+	STOP_MODE,
+	TURN_MODE,
 };
 enum QR_DECTION{
 	QR_1,
@@ -33,6 +49,8 @@ class CmdPublishNode : public nodelet::Nodelet {
     float obs_y_ = 10000;	
     bool temp_is_obs_in_aisle = false;
     double spare_length = 0;
+		float Max_speed = 0.5;
+		unsigned int align_cnt=0;
     // Amcl
     float global_dist_err_ = 0;
     float global_ang_err_ = 0;  
@@ -103,11 +121,13 @@ private:
         sub_gmapping_driving_ = nhp.subscribe<std_msgs::Bool> ("/lidar_driving", 10, &CmdPublishNode::GmappingpublishCmd, this);
     
         sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::publishCmd, this);
-//        sub_driving_ = nhp.subscribe("/mode/low", 10, &CmdPublishNode::publishCmd, this);
+				sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &CmdPublishNode::SpeedCallback, this);
+				sub_integratedpose_ = nhp.subscribe("/state/pose", 1, &CmdPublishNode::PoseCallback, this);
 
         sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &CmdPublishNode::areaDataCallback, this);
         
         pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
+        pub_prelidar_end_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/end", 10);
 	};
 
     void joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
@@ -163,7 +183,13 @@ private:
         line_start_y_ = data_cloud->points[2].y;
         line_end_y_ = data_cloud->points[3].y;        
     }
-
+    void SpeedCallback(const std_msgs::Float32::ConstPtr& speed_msgs)
+		{
+			Max_speed = speed_msgs->data;
+		}
+    void PoseCallback(const geometry_msgs::PoseStamped::ConstPtr& pose_msgs)
+		{
+		}
     void localDataCallback(const std_msgs::Float32MultiArray::ConstPtr& local_msgs)
     {
         global_dist_err_ = local_msgs->data[0]; 
@@ -269,7 +295,7 @@ private:
 					once_flag = true;
 				}
         //// 1. Joystick Driving
-        if(joy_driving_) 
+        if(joy_driving_ || Mode_type == MANUAL_MODE) 
 		    return;
         
         //// 2. Autonomous Driving
@@ -335,97 +361,113 @@ private:
 					ROS_INFO("To stop by using QR_dection: %f", fid_area);
 					fid_area =0;
 				}
-				if(RP_MODE){
-					double straight_l_xerr, straight_l_yerr;
-					double comy_yerr;
-					double l_xerr,l_yerr;
-					switch(Mode_type)
-					{
-						case MOBILE_STOP:
-							cmd_vel.linear.x = 0.0;
-		          cmd_vel.linear.z = 0.0;
-							pub_cmd_.publish(cmd_vel);
-			        //ros::Duration(0.5).sleep();
-						break;
 
-						case MOBILE_MOVING:
+				double straight_l_xerr, straight_l_yerr;
+				double comy_yerr;
+				double l_xerr,l_yerr;
+				switch(Mode_type)
+				{
+					case STOP_MODE:
+						cmd_vel.linear.x = 0.0;
+	          cmd_vel.linear.z = 0.0;
+						pub_cmd_.publish(cmd_vel);
+		        //ros::Duration(0.5).sleep();
+					break;
 
-							straight_l_xerr= g_x_err_ *cos(g_ctheta_) + g_y_err_ *sin(g_ctheta_);
-							straight_l_yerr= -g_x_err_ *sin(g_ctheta_) + g_y_err_ *cos(g_ctheta_);
-							comy_yerr= -g_x_err_ *sin(g_rtheta_) + g_y_err_ *cos(g_rtheta_);
+					case AUTO_LIDAR_MODE:
 
-							std::cout<< "l_x: " <<straight_l_xerr <<", l_y:" << straight_l_yerr <<std::endl;
-							std::cout<< "comp y: "<< comy_yerr <<std::endl;
-							if(config_.straight_) // straight test
-							{
-		            cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
-		            //cmd_vel.linear.x = config_.linear_vel_;
-		            cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr + config_.Kpy_param_straight_*comy_yerr;
+						straight_l_xerr= g_x_err_ *cos(g_ctheta_) + g_y_err_ *sin(g_ctheta_);
+						straight_l_yerr= -g_x_err_ *sin(g_ctheta_) + g_y_err_ *cos(g_ctheta_);
+						comy_yerr= -g_x_err_ *sin(g_rtheta_) + g_y_err_ *cos(g_rtheta_);
 
-								//Saturation parts due to Zero's deadline from VESC
-								if(cmd_vel.linear.x> config_.max_vel_)
-									cmd_vel.linear.x = config_.max_vel_;
-								else if(cmd_vel.linear.x< -config_.max_vel_)
-									cmd_vel.linear.x = -config_.max_vel_;				        				        
-
-								if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
-									cmd_vel.linear.x = config_.min_vel_;
-								else if(cmd_vel.linear.x> -config_.min_vel_ && cmd_vel.linear.x<0)
-									cmd_vel.linear.x = -config_.min_vel_;
-
-					      //Saturation to move correctly
-	/*
-								if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
-									cmd_vel.angular.z = config_.min_rot_;
-								else if(cmd_vel.angular.z> config_.max_rot_)
-									cmd_vel.angular.z = config_.max_rot_;
-			          if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
-									cmd_vel.angular.z = -config_.min_rot_;
-								else if(cmd_vel.angular.z< -config_.max_rot_)
-									cmd_vel.angular.z = -config_.max_rot_;*/
-							}
-							else // tunnel AMCL test
-							{
-		            //cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
-		            cmd_vel.linear.x = config_.linear_vel_;
-		            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+						std::cout<< "l_x: " <<straight_l_xerr <<", l_y:" << straight_l_yerr <<std::endl;
+						std::cout<< "comp y: "<< comy_yerr <<std::endl;
+						if(config_.straight_) // straight test
+						{
+	            cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
+	            //cmd_vel.linear.x = config_.linear_vel_;
+	            cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr + config_.Kpy_param_straight_*comy_yerr;
 
 							//Saturation parts due to Zero's deadline from VESC
-					      if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
-									cmd_vel.linear.x = config_.min_vel_;
-							//Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
-							}
-				      pub_cmd_.publish(cmd_vel);
-						break;
+							if(cmd_vel.linear.x> config_.max_vel_)
+								cmd_vel.linear.x = config_.max_vel_;
+							else if(cmd_vel.linear.x< -config_.max_vel_)
+								cmd_vel.linear.x = -config_.max_vel_;				        				        
 
-						case MOBILE_ROTATING:
-							l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
-							l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
-							std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
+							if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
+								cmd_vel.linear.x = config_.min_vel_;
+							else if(cmd_vel.linear.x> -config_.min_vel_ && cmd_vel.linear.x<0)
+								cmd_vel.linear.x = -config_.min_vel_;
 
-		          cmd_vel.linear.x = config_.rot_kx_*l_xerr;
-		          cmd_vel.angular.z = config_.rot_ky_ *l_xerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
-
-							//Saturation parts due to Zero's deadline from VESC
-							//Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
-		          if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
+				      //Saturation to move correctly
+/*
+							if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
 								cmd_vel.angular.z = config_.min_rot_;
 							else if(cmd_vel.angular.z> config_.max_rot_)
 								cmd_vel.angular.z = config_.max_rot_;
 		          if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
 								cmd_vel.angular.z = -config_.min_rot_;
 							else if(cmd_vel.angular.z< -config_.max_rot_)
-								cmd_vel.angular.z = -config_.max_rot_;
-							pub_cmd_.publish(cmd_vel);
-						break;
+								cmd_vel.angular.z = -config_.max_rot_;*/
+						}
+						else // tunnel AMCL test
+						{
+	            //cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
+	            cmd_vel.linear.x = config_.linear_vel_;
+	            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
 
-						case MOBILE_ALIGN:
-							pub_cmd_.publish(cmd_vel);
-						break;
+						//Saturation parts due to Zero's deadline from VESC
+				      if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
+								cmd_vel.linear.x = config_.min_vel_;
+						//Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
+						}
+			      pub_cmd_.publish(cmd_vel);
+					break;
 
-						default:
-						break;
-				}
+					case TURN_MODE:
+						l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
+						l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
+						std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
+
+	          cmd_vel.linear.x = config_.rot_kx_*l_xerr;
+	          cmd_vel.angular.z = config_.rot_ky_ *l_xerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
+
+						//Saturation parts due to Zero's deadline from VESC
+						//Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
+	          if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
+							cmd_vel.angular.z = config_.min_rot_;
+						else if(cmd_vel.angular.z> config_.max_rot_)
+							cmd_vel.angular.z = config_.max_rot_;
+	          if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
+							cmd_vel.angular.z = -config_.min_rot_;
+						else if(cmd_vel.angular.z< -config_.max_rot_)
+							cmd_vel.angular.z = -config_.max_rot_;
+						pub_cmd_.publish(cmd_vel);
+					break;
+
+					case AUTO_PRE_LIDAR_MODE:
+						align_cnt++;
+            cmd_vel.linear.x = 0.0;
+            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+						if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
+							cmd_vel.angular.z = config_.min_rot_;
+						else if(cmd_vel.angular.z> config_.max_rot_)
+							cmd_vel.angular.z = config_.max_rot_;
+	          if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
+							cmd_vel.angular.z = -config_.min_rot_;
+						else if(cmd_vel.angular.z< -config_.max_rot_)
+							cmd_vel.angular.z = -config_.max_rot_;
+
+						pub_cmd_.publish(cmd_vel);
+						if(y_err_local < 0.05 || align_cnt >=70 )//0.05 cm
+						{
+							align_cnt=0;
+							//pub_prelidar_end_.publish(1); //TODO pre lidar end
+						}
+					break;
+
+					default:
+					break;
 			}
         
 
@@ -440,9 +482,12 @@ private:
 	ros::Subscriber sub_gmapping_driving_;
 	ros::Subscriber sub_driving_;
 	ros::Subscriber sub_area_;
-
+	ros::Subscriber sub_speed_;
+	ros::Subscriber sub_integratedpose_;
     
 	ros::Publisher pub_cmd_;
+	ros::Publisher pub_prelidar_end_;
+
 
 	/** configuration parameters */
 	typedef struct
