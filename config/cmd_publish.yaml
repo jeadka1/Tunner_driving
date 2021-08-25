@@ -1,5 +1,5 @@
 Kpx_param: 2.0
-Kpy_param: 0.5 #1.1 for tunnel , 0.5:for straight test
+Kpy_param: 1.1 #1.1 for tunnel , 0.5:for straight test
 Kpy_param_rot: 0.1 #0.01
 linear_vel: 0.3 #0.1
 robot_width: 0.8
@@ -17,5 +17,6 @@ min_rot: 0.4 # The rover robotics can't move specific low speed it was 1.0
 max_vel: 0.5
 max_rot: 1.0 #
 straight: true #1 for straight control, 2 for tunnel
-Kpy_param_straight: 2.0 #y compenstation for staright
+Kpy_param_straight: 2.0 #y compenstation for staright prev_2.0
 Postech_code: true #to operate only (true)postech or (false) hanjeon
+straight_align_bound: 0.2

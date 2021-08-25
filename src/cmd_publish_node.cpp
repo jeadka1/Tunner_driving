@@ -15,10 +15,6 @@
 #include <pcl/point_types.h>
 #include <algorithm>
 enum MODE_{
-//	MOBILE_STOP,
-//	MOBILE_MOVING,
-//	MOBILE_ROTATING,
-//	MOBILE_ALIGN,
 	CHARGE_MODE,
 	STANDBY_MODE,
 	DOCKING_MODE,
@@ -59,6 +55,8 @@ class CmdPublishNode : public nodelet::Nodelet {
 
 		float g_x_err_=0, g_y_err_=0,g_rtheta_=0, g_ctheta_ =0;
 
+    float liney_pose=0;
+
 		bool init_call = false;
 		bool once_flag = false;
 		bool RP_MODE= true;
@@ -76,7 +74,8 @@ class CmdPublishNode : public nodelet::Nodelet {
     // 
     bool is_rotating_ = false;
     bool is_arrived_ = true;
-		bool is_linetracking = false;
+		//bool is_linetracking = false;
+		bool gmapping_go =false;
     
 
 public:
@@ -111,6 +110,8 @@ private:
         nhp.param("straight", config_.straight_, false);
         nhp.param("Kpy_param_straight", config_.Kpy_param_straight_, 1.1);
         nhp.param("Postech_code", config_.Postech_code_, false);
+        nhp.param("straight_align_bound", config_.straight_align_bound_, 0.1);
+
 
 
         // // Subscriber & Publisher
@@ -137,12 +138,16 @@ private:
         {
           std::cout<<"(push) B or O "<<std::endl;
           joy_driving_ = !joy_driving_;
+					gmapping_go = true; //Keep TRUE
           ros::Duration(0.5).sleep();
         }
 				if(joy_msg->buttons[0] == 1)	 //
 				{
           std::cout<<"(push) A or X "<<std::endl;
 					//system("reboot");
+					system("rosservice call /odom_init 0.0 0.0 0.0");
+					system("rosservice call /reset_odom");
+					//system("rosservice call /pose_update 0.0 0.0 0.0");
 				}
 				if(joy_driving_)
 				{ 
@@ -209,6 +214,8 @@ private:
         g_ctheta_ = local_msgs->data[11];
 
 				init_call = local_msgs->data[12];
+
+				liney_pose = local_msgs->data[13];
     }
 		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
 		{
@@ -217,7 +224,7 @@ private:
 		}
 		void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 		{
-			if(joy_driving_) 
+			if(joy_driving_ || !gmapping_go) 
 	    return;
       
       //// 2. Autonomous Driving
@@ -279,13 +286,15 @@ private:
 		}
     void publishCmd(const std_msgs::Int32::ConstPtr &driving_start)
     {
+				std_msgs::Empty EmptyMsg;
 				int Mode_type;
 				Mode_type = driving_start->data;
-				std::cout<<"Mode_type: "<<Mode_type<<std::endl;
+				//std::cout<<"Mode_type: "<<Mode_type<<std::endl;
 				//init_call first
 				if(init_call && once_flag)
 				{
 					//system("rosservice call /odom_init 0.0 0.0 0.0");
+					//system("rosservice call /reset_odom");
 					//system("rosservice call /pose_update 0.0 0.0 0.0");
 					ROS_INFO("initialized");
 					once_flag = false;
@@ -307,7 +316,7 @@ private:
             temp_is_obs_in_aisle = true;
             float line_length = line_end_y_ - line_start_y_;
             float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
-        	float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
+        		float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
             bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
             spare_length = 0;
             // (0) Front Obstacle Update
@@ -351,6 +360,27 @@ private:
 	    }
 				if(config_.Postech_code_)
 					Mode_type  = postech_mode_;
+				switch(fid_ID)
+				{
+					case 1://initalize at home
+					case 2:
+					break;
+
+					case 3://rotating
+					case 4:
+					break;
+
+					case 5://stop
+					case 6:
+						if(fid_area>5000)//to stop QR code 
+						{
+							Mode_type = STOP_MODE;
+							ROS_INFO("To stop by using QR_dection: %f", fid_area);
+						}
+					break;
+				}
+				fid_area =0; // to intialize (because it has previous value when the QR doesn't detect)
+/*
 				if(fid_area>5000)//to stop QR code 
 				{
 					//
@@ -359,8 +389,9 @@ private:
           cmd_vel.linear.z = 0.0;
 					pub_cmd_.publish(cmd_vel);
 					ROS_INFO("To stop by using QR_dection: %f", fid_area);
-					fid_area =0;
+					fid_area =0; // to intialize (because it has previous value when the QR doesn't detect)
 				}
+*/
 
 				double straight_l_xerr, straight_l_yerr;
 				double comy_yerr;
@@ -378,21 +409,47 @@ private:
 
 						straight_l_xerr= g_x_err_ *cos(g_ctheta_) + g_y_err_ *sin(g_ctheta_);
 						straight_l_yerr= -g_x_err_ *sin(g_ctheta_) + g_y_err_ *cos(g_ctheta_);
-						comy_yerr= -g_x_err_ *sin(g_rtheta_) + g_y_err_ *cos(g_rtheta_);
-
+						//comy_yerr= -g_x_err_ *sin(g_rtheta_) + g_y_err_ *cos(g_rtheta_); //rtheta_global theta
+						comy_yerr= liney_pose; //rtheta_global theta
+						//comy_yerr= g_rtheta_-atan2(g_y_err_,g_x_err_);
+            std::cout<<"sy err: "<<straight_l_yerr<<std::endl;
+            std::cout<<"compy err: "<<comy_yerr<<", liney_pose: "<<liney_pose<<std::endl;
+/*
+						std::cout<< "g_x_err_: " <<g_x_err_ <<" , g_y_err_: " <<g_y_err_ <<std::endl;
+						std::cout<< "rtheta: " <<g_rtheta_ <<" , ctheta: " <<g_ctheta_ <<std::endl;
 						std::cout<< "l_x: " <<straight_l_xerr <<", l_y:" << straight_l_yerr <<std::endl;
 						std::cout<< "comp y: "<< comy_yerr <<std::endl;
+*/
 						if(config_.straight_) // straight test
 						{
 	            cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
 	            //cmd_vel.linear.x = config_.linear_vel_;
-	            cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr + config_.Kpy_param_straight_*comy_yerr;
+	            //cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr + config_.Kpy_param_straight_*comy_yerr; //g_rtheta
+							cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr - config_.Kpy_param_straight_*comy_yerr; //liney_pose
+/*
+							if(comy_yerr<config_.straight_align_bound_ && comy_yerr>-config_.straight_align_bound_)
+              {
+								cmd_vel.angular.z = config_.Kpy_param_*straight_l_yerr;
+                ROS_INFO("con 1");
+              }
+							else
+              {
+								cmd_vel.angular.z = -config_.Kpy_param_straight_*comy_yerr; 
+                ROS_INFO("con 2");
+              }
+*/
 
 							//Saturation parts due to Zero's deadline from VESC
 							if(cmd_vel.linear.x> config_.max_vel_)
 								cmd_vel.linear.x = config_.max_vel_;
 							else if(cmd_vel.linear.x< -config_.max_vel_)
-								cmd_vel.linear.x = -config_.max_vel_;				        				        
+								cmd_vel.linear.x = -config_.max_vel_;
+
+
+						if(cmd_vel.angular.z> config_.max_rot_)
+							cmd_vel.angular.z = config_.max_rot_;
+ 						else if(cmd_vel.angular.z< -config_.max_rot_)
+							cmd_vel.angular.z = -config_.max_rot_;				        				        
 
 							if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
 								cmd_vel.linear.x = config_.min_vel_;
@@ -462,7 +519,7 @@ private:
 						if(y_err_local < 0.05 || align_cnt >=70 )//0.05 cm
 						{
 							align_cnt=0;
-							//pub_prelidar_end_.publish(1); //TODO pre lidar end
+							pub_prelidar_end_.publish(EmptyMsg);
 						}
 					break;
 
@@ -515,6 +572,7 @@ private:
 		bool straight_;
 		double Kpy_param_straight_;
 		bool Postech_code_;
+    double straight_align_bound_;
 	} Config;
 	Config config_;
 };

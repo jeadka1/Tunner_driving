@@ -12,18 +12,63 @@ find_package(catkin REQUIRED COMPONENTS
         pcl_conversions
         laser_geometry
 	message_generation
-	#std_msgs
-	#actionlib_msgs
-	#geometry_msgs
-	#nav_msgs
+	std_msgs
+	actionlib_msgs
+	geometry_msgs
+	nav_msgs
         )
 find_package(PCL REQUIRED)
 ## Generate messages in the 'msg' folder
+add_message_files(
+  DIRECTORY msg
+  FILES
+  BoundingBox.msg
+  InstanceSegment.msg
+  DrainCoef.msg
+  MissionItem.msg
+  Mission.msg
 
+  EnumLowMode.msg
+)
+
+## Generate services in the 'srv' folder
+add_service_files(
+  DIRECTORY srv
+  FILES
+  ImageSize.srv
+  MissionUpload.srv
+  SetInt32.srv
+  SetFloat32.srv
+  SetFloat64.srv
+  Mode.srv
+  SetBool.srv
+  WaypointDistance.srv
+  VideoStream.srv
+  SetUint8.srv
+  RobotPose.srv
+  WaypointPath.srv
+)
+
+## Generate actions in the 'action' folder
+add_action_files(
+  DIRECTORY action
+  FILES
+  Waypoint.action
+)
+
+## Generate added messages and services with any dependencies listed here
+generate_messages(
+  DEPENDENCIES
+  std_msgs 
+  sensor_msgs
+  actionlib_msgs
+  geometry_msgs
+  nav_msgs
+)
 catkin_package(
         #  INCLUDE_DIRS include
         LIBRARIES LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
-        CATKIN_DEPENDS nodelet roscpp sensor_msgs tf geometry_msgs fiducial_msgs pcl_conversions laser_geometry 
+        CATKIN_DEPENDS nodelet roscpp sensor_msgs tf geometry_msgs fiducial_msgs pcl_conversions laser_geometry message_runtime
         DEPENDS PCL
 )
 
@@ -88,4 +133,21 @@ install(DIRECTORY plugins
 
 install(DIRECTORY launch
         DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+## msg
+install(DIRECTORY msg/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/msg
+  PATTERN ".svn" EXCLUDE
+)
+
+## srv
+install(DIRECTORY srv/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/srv
+  PATTERN ".svn" EXCLUDE
+)
+
+## action
+install(DIRECTORY action/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/action
+  PATTERN ".svn" EXCLUDE
+)
 

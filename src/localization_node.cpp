@@ -60,9 +60,11 @@ private:
 	
 	void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg)
 	{
-		goal_count_ ++;
+		//geometry_msgs::PoseStamped print_point;
 		ROS_INFO("%d th goal is set", goal_count_);
+		//ROS_INFO("x: %d, y: %d", click_msg.pose.position.x, click_msg.pose.position.y);
 		goal_set_.push_back(*click_msg);
+    goal_count_ ++;
 	}
 
 	void poseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& pose_msg)
@@ -88,28 +90,37 @@ private:
 			localization_msgs.data.push_back(0); //
 			localization_msgs.data.push_back(0); // 
 
+			localization_msgs.data.push_back(0); // line y pose
+
 			localization_msgs.data.push_back(false); // init_flag for odom
 			pub_localization_.publish(localization_msgs);
 			return;
 		}
 		bool is_arrived = false;
-		current_goal_ = goal_set_[goal_index_ % goal_count_];	
-		ROS_INFO_ONCE("Goal is set: %d, %d", current_goal_.pose.position.x, current_goal_.pose.position.y);
+		current_goal_ = goal_set_[goal_index_ % goal_count_];
+		ROS_INFO_ONCE("Goal is set: %f, %f", current_goal_.pose.position.x, current_goal_.pose.position.y);
+
+		geometry_msgs::PoseStamped print_point;
+		print_point =goal_set_[0];
+		ROS_INFO_ONCE("Goal 1 is set: %f, %f", print_point.pose.position.x, print_point.pose.position.y);
+		print_point =goal_set_[1];
+		ROS_INFO_ONCE("Goal 2 is set: %f, %f", print_point.pose.position.x, print_point.pose.position.y);
 		
 		//Initialize when the mobile robot arrives at home		
 		//TODO It should operate with QR code
-		if (goal_index_ % goal_count_ ==0)// && init_flag_==false)
+		/*if (goal_index_ % goal_count_ ==0)// && init_flag_==false)
 		{
 			// Only once when it's arrived at home.
 			init_start_ = true;
 			//system("rosservice call /odom_init 0.0 0.0 0.0");
+			//system("rosservice call /reset_odom");
 			//system("rosservice call /pose_update 0.0 0.0 0.0");
 		}
 		else
 		{
 			//init_flag_ = false;
 			init_start_ = false;
-		}
+		}*/
 		
 
 		// 1. Calculate Global Error
@@ -146,8 +157,37 @@ private:
 		m.getRPY(roll, pitch, yaw);
 		g_x_err= global_x_err;
 		g_y_err= global_y_err;
-		g_rtheta = atan2(global_y_err,global_x_err);
+
 		g_ctheta = yaw;
+		//check once
+
+		if (goal_index_ % goal_count_ ==0 && g_rtheta_flag==true)
+		{
+			g_rtheta_flag = false;
+      g_rtheta = atan2(global_y_err , global_x_err);
+      //y = a(x-current_goal_.pose.position.x) + current_goal_.pose.position.y
+      //ax-y + a*current_goal_.pose.position.x+ current_goal_.pose.position.y =0
+      //fabs(current_x*a  +current_y*1 +a*current_goal_.pose.position.x+ current_goal_.pose.position.y)/sqrt(a^2+1);
+//      line_y_pose = g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y;
+		}
+		else if( goal_index_ % goal_count_ ==1 && g_rtheta_flag==false)
+		{
+			//init_flag_ = false;
+			g_rtheta_flag = true;
+      g_rtheta = atan2(global_y_err , global_x_err);
+      //line_y_pose = g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y;
+		}
+//    line_y_pose = fabs(pose_msg->pose.pose.position.x*g_rtheta  +pose_msg->pose.pose.position.y +g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y)/sqrt(g_rtheta*g_rtheta+1);
+//    line_y_pose =(pose_msg->pose.pose.position.x*g_rtheta  +pose_msg->pose.pose.position.y +g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y)/sqrt(g_rtheta*g_rtheta+1);
+		line_y_pose = -pose_msg->pose.pose.position.x *sin(g_rtheta) + pose_msg->pose.pose.position.y *cos(g_rtheta); //rtheta_global theta
+
+/*
+    //Print goal index
+		if(goal_index_ % goal_count_ ==0)
+			g_rtheta = atan2(goal_set_[1].pose.position.y - goal_set_[0].pose.position.y , goal_set_[1].pose.position.x-goal_set_[0].pose.position.x);
+		else if(goal_index_ % goal_count_ ==1)
+			g_rtheta = atan2(goal_set_[0].pose.position.y - goal_set_[1].pose.position.y , goal_set_[0].pose.position.x-goal_set_[1].pose.position.x);
+*/
 		// 2.1 Not Arrived to the goal position
 		if (global_dist_err > config_.global_dist_boundary_ && !is_rotating_) 
 		{
@@ -203,6 +243,7 @@ private:
 			static_y_err = static_y - pose_msg->pose.pose.position.y;
 			static_t = goal_yaw;
 			static_ct = yaw;
+				
 			// 2.2.1 Check whether robot should rotate
 				//To rotate 180 degree from the position where the mobile robot is arrived. // goalyaw mean "arrival yaw"
 			global_ang_err = goal_yaw - yaw;  
@@ -239,6 +280,8 @@ private:
 		localization_msgs.data.push_back(g_ctheta);
 
 		localization_msgs.data.push_back(init_start_);
+
+		localization_msgs.data.push_back(line_y_pose);
 		pub_localization_.publish(localization_msgs);
 	}
 
@@ -250,6 +293,7 @@ private:
 	bool is_rotating_ = false;
 	bool init_flag_ = false;
 	bool init_start_ = false;
+  bool g_rtheta_flag =true;
 
 
 	// GOAL
@@ -260,6 +304,7 @@ private:
 	double g_x_err,g_y_err, g_rtheta,g_ctheta;
 	int postect_mode;
 	bool arrvial_flag =true;
+  double line_y_pose = 0;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;

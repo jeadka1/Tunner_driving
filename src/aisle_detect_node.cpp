@@ -46,12 +46,13 @@ private:
         pub_line_ = nhp.advertise<sensor_msgs::PointCloud2>("/cluster_line", 10);
         pub_points_ = nhp.advertise<sensor_msgs::PointCloud2> ("/aisle_points", 10);
 
-        //pub_prelidar_fail_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/fail", 10);
-        //pub_lidar_fail_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/fail", 10);
+        pub_prelidar_fail_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/fail", 10);
+        pub_lidar_fail_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/fail", 10);
 	};
 
 	void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan_msg)
 	{
+		std_msgs::Empty EmptyMsg;
     	// 1. Data type conversions (laser scan -> pointcloud2)
 	    laser_geometry::LaserProjection projector;
         sensor_msgs::PointCloud2 cloud_msg;
@@ -77,7 +78,7 @@ private:
 		condrem.filter(*cloud_inrange);
 		if (cloud_inrange->size() == 0)
 		{
-			//this->pub_lidar_fail_.publish(true); //TODO FAIL Pub
+			this->pub_lidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
 			ROS_WARN("all points are cropped");
 			return;
 		}
@@ -129,7 +130,7 @@ private:
 		}
 		if((*cloud_cluster).size() == 0)
 		{
-			//this->pub_lidar_fail_.publish(true); //TODO FAIL Pub
+			this->pub_lidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
 			ROS_WARN("Not enough points!");
 			return;
 		} 
