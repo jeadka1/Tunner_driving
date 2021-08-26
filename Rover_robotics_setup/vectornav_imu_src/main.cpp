@@ -41,6 +41,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <vectornav/Ins.h>
 
+#define ACCEL_INIT_CNT 600
 
 ros::Publisher pubIMU, pubMag, pubGPS, pubOdom, pubTemp, pubPres, pubIns;
 ros::ServiceServer resetOdomSrv;
@@ -315,7 +316,7 @@ void BinaryAsyncMessageReceived(void* userData, Packet& p, size_t index)
 			sum_al[1] += al[1];
 			sum_al[2] += al[2];
 			sum_cnt++;
-			if(sum_cnt==100 && intial_flag)
+			if(sum_cnt==ACCEL_INIT_CNT && intial_flag)
 			{
 				intial_flag =false;
 				sum_cnt = 0;

@@ -67,7 +67,7 @@ class CmdPublishNode : public nodelet::Nodelet {
     float ref_y_ = 0;
     float near_y_ = 0;
 
-		float fid_ID=0;
+		int fid_ID=0;
 		float fid_area=0;
 		int postech_mode_=0;
     
@@ -219,7 +219,7 @@ private:
     }
 		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
 		{
-			fid_ID =area_msgs->data[0];
+			fid_ID = (int) area_msgs->data[0];
 			fid_area =area_msgs->data[1];
 		}
 		void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
@@ -360,6 +360,7 @@ private:
 	    }
 				if(config_.Postech_code_)
 					Mode_type  = postech_mode_;
+/*
 				switch(fid_ID)
 				{
 					case 1://initalize at home
@@ -380,6 +381,7 @@ private:
 					break;
 				}
 				fid_area =0; // to intialize (because it has previous value when the QR doesn't detect)
+*/
 /*
 				if(fid_area>5000)//to stop QR code 
 				{
