@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
     <param name="/use_sim_time" value="false"/>
-    <arg name="use_rp" default="true"/>
+    <arg name="use_rp" default="false"/>
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="false"/>
     <arg name="use_postech_pos" default="false"/>
@@ -39,9 +39,9 @@
     <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /mode/low std_msgs/Int32 0" output="screen"/>
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     
-    <!--node pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
+    <node if="$(arg use_rp)"pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/aisle_detect.yaml"/>
-    </node-->
+    </node>
 
     <!--node pkg="nodelet" type="nodelet" name="ObstaclesNode_loader" args="load auto_driving/ObstaclesNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/obstacles.yaml"/>
