@@ -199,7 +199,7 @@ private:
 		// 2.2 Arrived to the goal position
 		else
 		{
-			if(arrvial_flag)
+			if(arrvial_flag )
 			{
 				arrvial_flag = false;
 				postect_mode = STOP_MODE;//to finish rotate (stop)

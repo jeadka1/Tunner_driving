@@ -24,7 +24,7 @@
         <param name="serial_port"         type="string" value="/dev/rplidar"/>
         <param name="serial_baudrate"     type="int"    value="115200"/><!--A1/A2 -->
         <!--param name="serial_baudrate"     type="int"    value="256000"--><!--A3 -->
-        <param name="frame_id"            type="string" value="laser"/>
+        <param name="frame_i^_d"            type="string" value="laser"/>
         <param name="inverted"            type="bool"   value="false"/>
         <param name="angle_compensate"    type="bool"   value="true"/>
         <remap from="/scan" to="/rp/scan"/>
@@ -39,7 +39,7 @@
     <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /mode/low std_msgs/Int32 0" output="screen"/>
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     
-    <node if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
+    <node if="$(arg use_rp)"pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/aisle_detect.yaml"/>
     </node>
 

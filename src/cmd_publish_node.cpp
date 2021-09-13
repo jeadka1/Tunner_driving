@@ -13,9 +13,10 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
+#include <leo_driving/Mode.h>
 #include <algorithm>
 enum MODE_{
-	CHARGE_MODE,
+	CHARGE_MODE, 
 	STANDBY_MODE,
 	DOCKING_MODE,
 	DOCK_IN_MODE,
