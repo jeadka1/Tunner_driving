@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
 	actionlib_msgs
 	geometry_msgs
 	nav_msgs
+	std_srvs
         )
 find_package(PCL REQUIRED)
 add_message_files(

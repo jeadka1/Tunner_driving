@@ -12,7 +12,7 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Float32MultiArray.h>
-//#include "std_srvs/Empty.h"
+#include "std_srvs/Empty.h"
 #include <leo_driving/charging_done.h>
 
 enum MODE_{
@@ -290,6 +290,7 @@ private:
 			}
 			break;
 		default:
+			behavior_cnt=0;
 			ROS_INFO("Behavior error");
 			break;
 		}
@@ -414,8 +415,8 @@ private:
 	void DecisionpublishCmd(const std_msgs::Bool::ConstPtr &decision_call);
 	void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs);
 //current thoughts
-//	bool docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp);
-	bool docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res);
+	bool docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp);
+//	bool docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res);
 
 private:
 	ros::Subscriber sub_pose_;
@@ -475,7 +476,8 @@ void LocalizationNode::DecisionpublishCmd(const std_msgs::Bool::ConstPtr &decisi
 	//fid_ID, fid_area, 
 	decision_flag =true;
 }
-bool LocalizationNode::docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res)
+bool LocalizationNode::docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp)
+//bool LocalizationNode::docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res)
 {
 	//Charging_done_flag = true;
 	behavior_cnt++;
