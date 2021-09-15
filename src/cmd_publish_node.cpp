@@ -68,8 +68,8 @@ class CmdPublishNode : public nodelet::Nodelet {
     float ref_y_ = 0;
     float near_y_ = 0;
 
-		int fid_ID=0;
-		float fid_area=0;
+		//int fid_ID=0;
+		//float fid_area=0;
 		int postech_mode_=0;
     
     // 
@@ -120,13 +120,15 @@ private:
 		sub_obs_dists_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/obs_dists", 10, &CmdPublishNode::obsCallback, this);
         sub_aisle_ = nhp.subscribe<sensor_msgs::PointCloud2> ("/aisle_points", 10, &CmdPublishNode::aisleCallback, this);    
         sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
+
         sub_gmapping_driving_ = nhp.subscribe<std_msgs::Bool> ("/lidar_driving", 10, &CmdPublishNode::GmappingpublishCmd, this);
-    
         sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::publishCmd, this);
+
+
 				sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &CmdPublishNode::SpeedCallback, this);
 				sub_integratedpose_ = nhp.subscribe("/state/pose", 1, &CmdPublishNode::PoseCallback, this);
 
-        sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &CmdPublishNode::areaDataCallback, this);
+        //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &CmdPublishNode::areaDataCallback, this);
         
         pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
         pub_prelidar_end_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/end", 10);
@@ -217,12 +219,15 @@ private:
 				init_call = local_msgs->data[12];
 
 				liney_pose = local_msgs->data[13];
+
     }
-		void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
+		/*void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
 		{
 			fid_ID = (int) area_msgs->data[0];
 			fid_area =area_msgs->data[1];
-		}
+		}*/
+		
+
 		void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 		{
 			if(joy_driving_ || !gmapping_go) 
@@ -526,6 +531,15 @@ private:
 						}
 					break;
 
+					case DOCK_IN_MODE: //Hanjeon gives us the err of y
+	          cmd_vel.linear.x = config_.linear_vel_;
+            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+					break;
+					case DOCK_OUT_MODE: // with RPlidar
+	          cmd_vel.linear.x = config_.linear_vel_;
+            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+					break;					
+
 					default:
 					break;
 			}
@@ -541,7 +555,7 @@ private:
 	ros::Subscriber sub_localization_;
 	ros::Subscriber sub_gmapping_driving_;
 	ros::Subscriber sub_driving_;
-	ros::Subscriber sub_area_;
+	//ros::Subscriber sub_area_;
 	ros::Subscriber sub_speed_;
 	ros::Subscriber sub_integratedpose_;
     

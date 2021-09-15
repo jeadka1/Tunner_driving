@@ -46,6 +46,7 @@ add_service_files(
   SetUint8.srv
   RobotPose.srv
   WaypointPath.srv
+  charging_done.srv
 )
 
 ## Generate actions in the 'action' folder

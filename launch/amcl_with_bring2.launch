@@ -6,6 +6,8 @@
     <arg name="use_joy" default="false"/>
     <arg name="use_postech_pos" default="false"/>
     <arg name="use_static_tf" default="true"/>
+    <arg name="use_mode" default="true"/>
+
     <arg name="map_file" default="/home/cocel/catkin_ws/maps/b2_ground.yaml"/>
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/second_b_test2.yaml"/-->
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/tunnel_lib.yaml"/-->
@@ -37,6 +39,7 @@
     
     <!-- LEO_DRIVING PACKAGE-->
     <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /mode/low std_msgs/Int32 0" output="screen"/>
+    <!--node if="$(arg use_mode)" pkg="rostopic" type="rostopic" name="decison_driving_trigger" args="pub -r 10 /mode_decision std_msgs/Bool true" output="screen"/-->
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     
     <node if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">

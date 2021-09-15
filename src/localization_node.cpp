@@ -12,6 +12,8 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Float32MultiArray.h>
+//#include "std_srvs/Empty.h"
+#include <leo_driving/charging_done.h>
 
 enum MODE_{
 //	MOBILE_STOP,
@@ -53,8 +55,14 @@ private:
 
 		sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);    
 		sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::poseCallback, this);
+
+		sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);
+		sub_mode_ = nhp.subscribe<std_msgs::Bool> ("/mode_decision", 10, &LocalizationNode::DecisionpublishCmd, this);
+
+		sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this);
 		
 		pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); 
+		pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10); 
 		// [0]: global dist error, [1]: global angle error, [2]: arrival flag, [3]: rotating flag
 	};
 	
@@ -69,6 +77,7 @@ private:
 
 	void poseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& pose_msg)
 	{
+		pub_robot_pose_.publish(pose_msg); //TODO test
 		std_msgs::Float32MultiArray localization_msgs;
 		localization_msgs.data.clear();
 		if (goal_count_ < 2)
@@ -77,7 +86,6 @@ private:
 			localization_msgs.data.push_back(10000); // global_dist_err
 			localization_msgs.data.push_back(10000); // global_ang_err
 			localization_msgs.data.push_back(0); // Postech mode
-			//localization_msgs.data.push_back(true); // is_arrived -> Not moving
 			localization_msgs.data.push_back(false); // is_rotating
 
 			localization_msgs.data.push_back(0); // global_x_err
@@ -106,21 +114,6 @@ private:
 		print_point =goal_set_[1];
 		ROS_INFO_ONCE("Goal 2 is set: %f, %f", print_point.pose.position.x, print_point.pose.position.y);
 		
-		//Initialize when the mobile robot arrives at home		
-		//TODO It should operate with QR code
-		/*if (goal_index_ % goal_count_ ==0)// && init_flag_==false)
-		{
-			// Only once when it's arrived at home.
-			init_start_ = true;
-			//system("rosservice call /odom_init 0.0 0.0 0.0");
-			//system("rosservice call /reset_odom");
-			//system("rosservice call /pose_update 0.0 0.0 0.0");
-		}
-		else
-		{
-			//init_flag_ = false;
-			init_start_ = false;
-		}*/
 		
 
 		// 1. Calculate Global Error
@@ -135,7 +128,6 @@ private:
 		std::cout <<" " <<std::endl;
 
 
-		//instead of in else loop
 		tf::StampedTransform transform;
 		tf::TransformListener tf_listener;
 		if (!tf_listener.waitForTransform("/odom", "/base_link", ros::Time(0), ros::Duration(0.5), ros::Duration(0.01))) 
@@ -165,21 +157,14 @@ private:
 		{
 			g_rtheta_flag = false;
       g_rtheta = atan2(global_y_err , global_x_err);
-      //y = a(x-current_goal_.pose.position.x) + current_goal_.pose.position.y
-      //ax-y + a*current_goal_.pose.position.x+ current_goal_.pose.position.y =0
-      //fabs(current_x*a  +current_y*1 +a*current_goal_.pose.position.x+ current_goal_.pose.position.y)/sqrt(a^2+1);
-//      line_y_pose = g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y;
 		}
 		else if( goal_index_ % goal_count_ ==1 && g_rtheta_flag==false)
 		{
 			//init_flag_ = false;
 			g_rtheta_flag = true;
       g_rtheta = atan2(global_y_err , global_x_err);
-      //line_y_pose = g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y;
 		}
-//    line_y_pose = fabs(pose_msg->pose.pose.position.x*g_rtheta  +pose_msg->pose.pose.position.y +g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y)/sqrt(g_rtheta*g_rtheta+1);
-//    line_y_pose =(pose_msg->pose.pose.position.x*g_rtheta  +pose_msg->pose.pose.position.y +g_rtheta*current_goal_.pose.position.x+ current_goal_.pose.position.y)/sqrt(g_rtheta*g_rtheta+1);
-		line_y_pose = -pose_msg->pose.pose.position.x *sin(g_rtheta) + pose_msg->pose.pose.position.y *cos(g_rtheta); //rtheta_global theta
+		line_y_pose = -pose_msg->pose.pose.position.x *sin(g_rtheta) + pose_msg->pose.pose.position.y *cos(g_rtheta); //rtheta_global theta rotation matrix
 
 /*
     //Print goal index
@@ -189,6 +174,163 @@ private:
 			g_rtheta = atan2(goal_set_[0].pose.position.y - goal_set_[1].pose.position.y , goal_set_[0].pose.position.x-goal_set_[1].pose.position.x);
 */
 		// 2.1 Not Arrived to the goal position
+
+
+//----------------------------------------------- current // is_rotating is essential
+		switch(behavior_cnt) // Behave in turn
+		{
+		case 0://moving to go turning point: start straight
+			behavior_decision = AUTO_LIDAR_MODE;
+			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
+			{
+				behavior_cnt++;
+				behavior_decision = STOP_MODE;
+
+				is_rotating_ =true;
+				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
+				goal_yaw = yaw + M_PI; // save current when start rotating
+				if(goal_yaw > M_PI)
+					goal_yaw -= 2*M_PI;
+				else if(goal_yaw < -M_PI)
+					goal_yaw += 2*M_PI;
+			}
+			break;
+
+		case 1://turn : QR or goal pose
+			behavior_decision = TURN_MODE;
+
+			global_ang_err = goal_yaw - yaw;  
+			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
+			if(global_ang_err > M_PI)
+				global_ang_err -= 2*M_PI;
+			else if(global_ang_err < -M_PI)
+				global_ang_err += 2*M_PI;
+			if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+			{
+				behavior_cnt++;
+				behavior_decision = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
+
+				is_rotating_ =false;
+				goal_index_++;				
+			}
+			break;
+
+		case 2: //moving back to home
+			behavior_decision = AUTO_LIDAR_MODE;
+			
+			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 2) )
+			{
+				behavior_cnt++;
+				behavior_decision = STOP_MODE;
+
+				is_rotating_ =true;
+				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
+				goal_yaw = yaw + M_PI; // save current when start rotating
+				if(goal_yaw > M_PI)
+					goal_yaw -= 2*M_PI;
+				else if(goal_yaw < -M_PI)
+					goal_yaw += 2*M_PI;
+			}
+			break;
+
+		case 3://stop -> turn : QR or goal pose
+			behavior_decision = TURN_MODE;
+
+			global_ang_err = goal_yaw - yaw;  
+			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
+			if(global_ang_err > M_PI)
+				global_ang_err -= 2*M_PI;
+			else if(global_ang_err < -M_PI)
+				global_ang_err += 2*M_PI;
+
+			if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+			{
+				behavior_cnt++;
+				behavior_decision = STOP_MODE; 
+
+				is_rotating_ =false;
+				//goal_index_++;//???
+			}
+			break;
+
+		case 4:// docking in : 
+			behavior_decision = DOCK_IN_MODE;//moving
+			if(fid_area >=5000 && fid_ID == 3)
+			{
+				behavior_cnt++;
+				behavior_decision = STOP_MODE; 
+			}
+			break;
+
+		case 5://wait : before resservice call
+			behavior_decision = STOP_MODE; 
+			if(Charging_done_flag)//rosserive call
+			{
+				behavior_cnt++;
+				behavior_decision = STOP_MODE; 
+
+				Charging_done_flag =0;
+			}
+			break;
+
+		case 6://dokcing_out : rostopic pub ending_charging
+			behavior_decision = DOCK_OUT_MODE;//moving
+			if(fid_area >=5000 && fid_ID == 4)// To use AMCL pose probably
+			{
+				behavior_cnt=0;
+				behavior_decision = STOP_MODE; 
+
+				system("rosservice call /odom_init 0.0 0.0 0.0");
+				system("rosservice call /reset_odom");
+				system("rosservice call /pose_update 0.0 0.0 0.0");
+			}
+			break;
+		default:
+			ROS_INFO("Behavior error");
+			break;
+		}
+
+		ROS_INFO("Behavior count: %d, %d", behavior_cnt, behavior_decision);
+
+		switch(behavior_decision) //To decide what the mobile robot does
+		{
+		case AUTO_LIDAR_MODE:
+			postect_mode = AUTO_LIDAR_MODE;//moving
+			break;
+
+		case TURN_MODE:
+			postect_mode = TURN_MODE;//moving
+
+			static_x_err = static_x - pose_msg->pose.pose.position.x;
+			static_y_err = static_y - pose_msg->pose.pose.position.y;
+			static_t = goal_yaw;
+			static_ct = yaw;
+			break;
+
+		case DOCK_IN_MODE:
+			postect_mode = DOCK_IN_MODE;//moving
+			break;
+
+		case DOCK_OUT_MODE:
+			postect_mode = DOCK_OUT_MODE;//moving
+			break;
+
+		case STOP_MODE:
+			postect_mode = STOP_MODE;//moving
+			break;
+
+
+		default :
+
+			break;
+		}
+		
+//----------------------------------------------- prvious // is_rotating is essential
+/*
 		if (global_dist_err > config_.global_dist_boundary_ && !is_rotating_) 
 		{
 			is_arrived = false;
@@ -199,32 +341,12 @@ private:
 		// 2.2 Arrived to the goal position
 		else
 		{
-			if(arrvial_flag )
+			if(arrvial_flag ) //TODO ???
 			{
 				arrvial_flag = false;
 				postect_mode = STOP_MODE;//to finish rotate (stop)
 			}
 			is_arrived = true;
-			/*tf::StampedTransform transform;
-			tf::TransformListener tf_listener;
-			if (!tf_listener.waitForTransform("/odom", "/base_link", ros::Time(0), ros::Duration(0.5), ros::Duration(0.01))) 
-			{
-				ROS_ERROR("Unable to get pose from TF");
-				return;
-			}
-			try 
-			{
-				tf_listener.lookupTransform("/odom", "/base_link", ros::Time(0), transform);
-			}
-			catch (const tf::TransformException &e) {
-				ROS_ERROR("%s",e.what());
-			} 				
-			// angle
-			
-			tf2::Quaternion orientation (transform.getRotation().x(), transform.getRotation().y(), transform.getRotation().z(), transform.getRotation().w());
-			tf2::Matrix3x3 m(orientation);
-			double roll, pitch, yaw;
-			m.getRPY(roll, pitch, yaw);*/
 		
 			if(!is_rotating_) 
 			{
@@ -263,6 +385,9 @@ private:
 				postect_mode = STOP_MODE;//to finish rotate (stop) (AUTO_PRE_LIDAR_MODE)
 			}
 		}
+*/
+
+//-----------------------------------------------
 		localization_msgs.data.push_back(global_dist_err);
 		localization_msgs.data.push_back(global_ang_err);
 		localization_msgs.data.push_back(postect_mode);
@@ -285,10 +410,21 @@ private:
 		pub_localization_.publish(localization_msgs);
 	}
 
+//Previous thoughts	
+	void DecisionpublishCmd(const std_msgs::Bool::ConstPtr &decision_call);
+	void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs);
+//current thoughts
+//	bool docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp);
+	bool docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res);
+
 private:
 	ros::Subscriber sub_pose_;
 	ros::Subscriber sub_goal_;
+	ros::Subscriber sub_area_;
+	ros::Subscriber sub_mode_;
+	ros::ServiceServer sub_docking_done_;
 	ros::Publisher pub_localization_;
+	ros::Publisher pub_robot_pose_;
 	
 	bool is_rotating_ = false;
 	bool init_flag_ = false;
@@ -305,6 +441,16 @@ private:
 	int postect_mode;
 	bool arrvial_flag =true;
   double line_y_pose = 0;
+
+	//Cmaera
+	int fid_ID=0;
+	float fid_area=0;
+	bool decision_flag=false;
+
+	//Decision
+	unsigned int behavior_cnt =0;
+	int behavior_decision=STOP_MODE;
+	bool Charging_done_flag =false;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;
@@ -318,6 +464,23 @@ private:
 	Config config_;
 
 };
+void LocalizationNode::areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
+{
+	fid_ID = (int) area_msgs->data[0];
+	fid_area =area_msgs->data[1];
+	ROS_INFO("fid_ID: %d, are: %f",fid_ID, fid_area);
+}
+void LocalizationNode::DecisionpublishCmd(const std_msgs::Bool::ConstPtr &decision_call)  //
+{
+	//fid_ID, fid_area, 
+	decision_flag =true;
+}
+bool LocalizationNode::docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res)
+{
+	//Charging_done_flag = true;
+	behavior_cnt++;
+	return true;
+}
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);
 
