@@ -366,40 +366,7 @@ private:
 	    }
 				if(config_.Postech_code_)
 					Mode_type  = postech_mode_;
-/*
-				switch(fid_ID)
-				{
-					case 1://initalize at home
-					case 2:
-					break;
 
-					case 3://rotating
-					case 4:
-					break;
-
-					case 5://stop
-					case 6:
-						if(fid_area>5000)//to stop QR code 
-						{
-							Mode_type = STOP_MODE;
-							ROS_INFO("To stop by using QR_dection: %f", fid_area);
-						}
-					break;
-				}
-				fid_area =0; // to intialize (because it has previous value when the QR doesn't detect)
-*/
-/*
-				if(fid_area>5000)//to stop QR code 
-				{
-					//
-					is_linetracking = true; //line tracking?
-					cmd_vel.linear.x = 0.0;
-          cmd_vel.linear.z = 0.0;
-					pub_cmd_.publish(cmd_vel);
-					ROS_INFO("To stop by using QR_dection: %f", fid_area);
-					fid_area =0; // to intialize (because it has previous value when the QR doesn't detect)
-				}
-*/
 
 				double straight_l_xerr, straight_l_yerr;
 				double comy_yerr;

@@ -185,16 +185,6 @@ private:
 			{
 				behavior_cnt++;
 				behavior_decision = STOP_MODE;
-
-				is_rotating_ =true;
-				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-				static_x = pose_msg->pose.pose.position.x;
-				static_y = pose_msg->pose.pose.position.y;
-				goal_yaw = yaw + M_PI; // save current when start rotating
-				if(goal_yaw > M_PI)
-					goal_yaw -= 2*M_PI;
-				else if(goal_yaw < -M_PI)
-					goal_yaw += 2*M_PI;
 			}
 			break;
 
@@ -212,7 +202,7 @@ private:
 				behavior_cnt++;
 				behavior_decision = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
 
-				is_rotating_ =false;
+				//is_rotating_ =false;
 				goal_index_++;				
 			}
 			break;
@@ -224,16 +214,6 @@ private:
 			{
 				behavior_cnt++;
 				behavior_decision = STOP_MODE;
-
-				is_rotating_ =true;
-				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-				static_x = pose_msg->pose.pose.position.x;
-				static_y = pose_msg->pose.pose.position.y;
-				goal_yaw = yaw + M_PI; // save current when start rotating
-				if(goal_yaw > M_PI)
-					goal_yaw -= 2*M_PI;
-				else if(goal_yaw < -M_PI)
-					goal_yaw += 2*M_PI;
 			}
 			break;
 
@@ -252,7 +232,7 @@ private:
 				behavior_cnt++;
 				behavior_decision = STOP_MODE; 
 
-				is_rotating_ =false;
+				//is_rotating_ =false;
 				//goal_index_++;//???
 			}
 			break;
@@ -301,27 +281,43 @@ private:
 		{
 		case AUTO_LIDAR_MODE:
 			postect_mode = AUTO_LIDAR_MODE;//moving
+			is_rotating_= false;
 			break;
 
 		case TURN_MODE:
 			postect_mode = TURN_MODE;//moving
-
+			if(!is_rotating_)
+			{
+				is_rotating_ =true;
+				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
+				goal_yaw = yaw + M_PI; // save current when start rotating
+				if(goal_yaw > M_PI)
+					goal_yaw -= 2*M_PI;
+				else if(goal_yaw < -M_PI)
+					goal_yaw += 2*M_PI;
+			}
 			static_x_err = static_x - pose_msg->pose.pose.position.x;
 			static_y_err = static_y - pose_msg->pose.pose.position.y;
 			static_t = goal_yaw;
 			static_ct = yaw;
+
 			break;
 
 		case DOCK_IN_MODE:
 			postect_mode = DOCK_IN_MODE;//moving
+			is_rotating_= false;
 			break;
 
 		case DOCK_OUT_MODE:
 			postect_mode = DOCK_OUT_MODE;//moving
+			is_rotating_= false;
 			break;
 
 		case STOP_MODE:
 			postect_mode = STOP_MODE;//moving
+			is_rotating_= false;
 			break;
 
 
