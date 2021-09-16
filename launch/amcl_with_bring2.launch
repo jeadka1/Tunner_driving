@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
     <param name="/use_sim_time" value="false"/>
-    <arg name="use_rp" default="false"/>
+    <arg name="use_rp" default="true"/>
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="false"/>
     <arg name="use_postech_pos" default="false"/>
     <arg name="use_static_tf" default="true"/>
     <arg name="use_mode" default="true"/>
+    <arg name="use_obs" default="false"/>
 
-    <arg name="map_file" default="/home/cocel/catkin_ws/maps/b2_ground.yaml"/>
+
+    <arg name="map_file" default="/home/cocel/catkin_ws/maps/switch_2nd.yaml"/>
+    <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/b2_ground.yaml"/-->
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/second_b_test2.yaml"/-->
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/tunnel_lib.yaml"/-->
 
@@ -46,9 +49,9 @@
         <rosparam command="load" file="$(find leo_driving)/config/aisle_detect.yaml"/>
     </node>
 
-    <!--node pkg="nodelet" type="nodelet" name="ObstaclesNode_loader" args="load auto_driving/ObstaclesNode nodelet_manager" output="screen">
+    <node if="$(arg use_obs)" pkg="nodelet" type="nodelet" name="ObstaclesNode_loader" args="load auto_driving/ObstaclesNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/obstacles.yaml"/>
-    </node-->
+    </node>
 
     <node pkg="nodelet" type="nodelet" name="CmdPublishNode_loader" args="load auto_driving/CmdPublishNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/cmd_publish.yaml"/>
@@ -63,8 +66,8 @@
     
     <!-- STATIC TF PUBLISHER -->
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_rp" args="0 0 0 3.141592 0 0 base_link laser 100" />
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_velo" args="0.1 0 0 0 0 0 base_link velodyne 100" />
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_imu" args="0.1 0 0 0.0 0 0 base_link imu 100" />
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_velo" args="0.2 0 0 0 0 0 base_link velodyne 100" />
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_imu" args="0.2 0 0 0.0 0 0 base_link imu 100" />
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="map_to_odom" args="0 0 0 0.0 0 0 map odom 100" />
 
 

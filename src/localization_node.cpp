@@ -180,6 +180,7 @@ private:
 		switch(behavior_cnt) // Behave in turn
 		{
 		case 0://moving to go turning point: start straight
+			init_start_ = false;
 			behavior_decision = AUTO_LIDAR_MODE;
 			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
 			{
@@ -190,6 +191,19 @@ private:
 
 		case 1://turn : QR or goal pose
 			behavior_decision = TURN_MODE;
+			
+			if(!is_rotating_)
+			{
+				is_rotating_ =true;
+				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
+				goal_yaw = yaw + M_PI; // save current when start rotating
+				if(goal_yaw > M_PI)
+					goal_yaw -= 2*M_PI;
+				else if(goal_yaw < -M_PI)
+					goal_yaw += 2*M_PI;
+			}
 
 			global_ang_err = goal_yaw - yaw;  
 			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
@@ -202,7 +216,7 @@ private:
 				behavior_cnt++;
 				behavior_decision = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
 
-				//is_rotating_ =false;
+				is_rotating_ =false;
 				goal_index_++;				
 			}
 			break;
@@ -219,6 +233,18 @@ private:
 
 		case 3://stop -> turn : QR or goal pose
 			behavior_decision = TURN_MODE;
+			if(!is_rotating_)
+			{
+				is_rotating_ =true;
+				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
+				goal_yaw = yaw + M_PI; // save current when start rotating
+				if(goal_yaw > M_PI)
+					goal_yaw -= 2*M_PI;
+				else if(goal_yaw < -M_PI)
+					goal_yaw += 2*M_PI;
+			}
 
 			global_ang_err = goal_yaw - yaw;  
 			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
@@ -232,7 +258,7 @@ private:
 				behavior_cnt++;
 				behavior_decision = STOP_MODE; 
 
-				//is_rotating_ =false;
+				is_rotating_ =false;
 				//goal_index_++;//???
 			}
 			break;
@@ -263,41 +289,29 @@ private:
 			{
 				behavior_cnt=0;
 				behavior_decision = STOP_MODE; 
-
-				system("rosservice call /odom_init 0.0 0.0 0.0");
-				system("rosservice call /reset_odom");
-				system("rosservice call /pose_update 0.0 0.0 0.0");
+				init_start_ = true;
+				goal_index_ ++;
 			}
 			break;
 		default:
-			behavior_cnt=0;
+			//behavior_cnt=0;
+			behavior_decision = STOP_MODE;
 			ROS_INFO("Behavior error");
 			break;
 		}
 
 		ROS_INFO("Behavior count: %d, %d", behavior_cnt, behavior_decision);
-
+//-----------------------------------------------------------------------------------------------------
 		switch(behavior_decision) //To decide what the mobile robot does
 		{
 		case AUTO_LIDAR_MODE:
 			postect_mode = AUTO_LIDAR_MODE;//moving
-			is_rotating_= false;
+			//is_rotating_= false;
 			break;
 
 		case TURN_MODE:
 			postect_mode = TURN_MODE;//moving
-			if(!is_rotating_)
-			{
-				is_rotating_ =true;
-				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-				static_x = pose_msg->pose.pose.position.x;
-				static_y = pose_msg->pose.pose.position.y;
-				goal_yaw = yaw + M_PI; // save current when start rotating
-				if(goal_yaw > M_PI)
-					goal_yaw -= 2*M_PI;
-				else if(goal_yaw < -M_PI)
-					goal_yaw += 2*M_PI;
-			}
+			
 			static_x_err = static_x - pose_msg->pose.pose.position.x;
 			static_y_err = static_y - pose_msg->pose.pose.position.y;
 			static_t = goal_yaw;
@@ -307,17 +321,17 @@ private:
 
 		case DOCK_IN_MODE:
 			postect_mode = DOCK_IN_MODE;//moving
-			is_rotating_= false;
+			//is_rotating_= false;
 			break;
 
 		case DOCK_OUT_MODE:
 			postect_mode = DOCK_OUT_MODE;//moving
-			is_rotating_= false;
+			//is_rotating_= false;
 			break;
 
 		case STOP_MODE:
 			postect_mode = STOP_MODE;//moving
-			is_rotating_= false;
+			//is_rotating_= false;
 			break;
 
 
@@ -443,6 +457,7 @@ private:
 	int fid_ID=0;
 	float fid_area=0;
 	bool decision_flag=false;
+	bool turn_mode_start = false;
 
 	//Decision
 	unsigned int behavior_cnt =0;
