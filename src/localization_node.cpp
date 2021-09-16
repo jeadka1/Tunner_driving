@@ -12,6 +12,7 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Float32MultiArray.h>
+#include <std_msgs/Int32.h>
 #include "std_srvs/Empty.h"
 #include <leo_driving/charging_done.h>
 
@@ -52,17 +53,20 @@ private:
 		// Configuration //
 		nhp.param("global_dist_boundary", config_.global_dist_boundary_, 0.3);
 		nhp.param("global_angle_boundary", config_.global_angle_boundary_, 0.05);
+		nhp.param("HJ_MODE", config_.HJ_MODE_, true);
+
 
 		sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);    
 		sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::poseCallback, this);
 
 		sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);
-		sub_mode_ = nhp.subscribe<std_msgs::Bool> ("/mode_decision", 10, &LocalizationNode::DecisionpublishCmd, this);
+		sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this);
 
 		sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this);
 		
 		pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); 
 		pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10); 
+		pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10);
 		// [0]: global dist error, [1]: global angle error, [2]: arrival flag, [3]: rotating flag
 	};
 	
@@ -77,7 +81,7 @@ private:
 
 	void poseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& pose_msg)
 	{
-		pub_robot_pose_.publish(pose_msg); //TODO test
+		pub_robot_pose_.publish(pose_msg);
 		std_msgs::Float32MultiArray localization_msgs;
 		localization_msgs.data.clear();
 		if (goal_count_ < 2)
@@ -177,6 +181,94 @@ private:
 
 
 //----------------------------------------------- current // is_rotating is essential
+		//HJ_mode
+
+		std_msgs::Int32 QR_msg;
+		
+		if(config_.HJ_MODE_){
+		switch(HJ_mode) //To decide what the mobile robot does
+		{
+		case AUTO_LIDAR_MODE:
+			postect_mode = AUTO_LIDAR_MODE;//moving
+			is_rotating_ = true;
+			if(fid_ID==1 && fid_area >=5000)
+			{
+				QR_msg.data =1;
+				pub_QR_.publish(QR_msg);//
+			}
+			else if (fid_ID==2 && fid_area >=5000)
+			{
+				QR_msg.data =2;
+				pub_QR_.publish(QR_msg);//
+			}
+			break;
+
+		case TURN_MODE:
+			postect_mode = TURN_MODE;//moving
+			
+			if(!is_rotating_)
+			{
+				is_rotating_ =true;
+				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
+				goal_yaw = yaw + M_PI; // save current when start rotating
+				if(goal_yaw > M_PI)
+					goal_yaw -= 2*M_PI;
+				else if(goal_yaw < -M_PI)
+					goal_yaw += 2*M_PI;
+			}
+
+			global_ang_err = goal_yaw - yaw;  
+			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
+			if(global_ang_err > M_PI)
+				global_ang_err -= 2*M_PI;
+			else if(global_ang_err < -M_PI)
+				global_ang_err += 2*M_PI;
+
+			if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+			{
+				//is_rotating_ =false;
+				goal_index_++;	//TODO ?? 
+			}
+
+			static_x_err = static_x - pose_msg->pose.pose.position.x;
+			static_y_err = static_y - pose_msg->pose.pose.position.y;
+			static_t = goal_yaw;
+			static_ct = yaw;
+
+			break;
+
+		case DOCK_IN_MODE:
+			postect_mode = DOCK_IN_MODE;//moving
+			is_rotating_ = false;
+			break;
+
+		case DOCK_OUT_MODE:
+			postect_mode = DOCK_OUT_MODE;//moving
+			is_rotating_ = false;
+			if(fid_ID==4 && fid_area >=5000)
+			{
+				init_start_ = true;
+				goal_index_ ++; //TODO ?? 
+				QR_msg.data =4;
+				pub_QR_.publish(QR_msg);//
+			}
+			break;
+
+		case STOP_MODE:
+			postect_mode = STOP_MODE;//moving
+			is_rotating_= false;
+			break;
+
+
+		default :
+			is_rotating_= false;
+			break;
+		}
+	}
+	{
+//----------------------------------------------- postech mode
 		switch(behavior_cnt) // Behave in turn
 		{
 		case 0://moving to go turning point: start straight
@@ -300,6 +392,7 @@ private:
 			break;
 		}
 
+
 		ROS_INFO("Behavior count: %d, %d", behavior_cnt, behavior_decision);
 //-----------------------------------------------------------------------------------------------------
 		switch(behavior_decision) //To decide what the mobile robot does
@@ -339,6 +432,8 @@ private:
 
 			break;
 		}
+	}
+
 		
 //----------------------------------------------- prvious // is_rotating is essential
 /*
@@ -422,7 +517,7 @@ private:
 	}
 
 //Previous thoughts	
-	void DecisionpublishCmd(const std_msgs::Bool::ConstPtr &decision_call);
+	void DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call);
 	void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs);
 //current thoughts
 	bool docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp);
@@ -436,6 +531,7 @@ private:
 	ros::ServiceServer sub_docking_done_;
 	ros::Publisher pub_localization_;
 	ros::Publisher pub_robot_pose_;
+	ros::Publisher pub_QR_;
 	
 	bool is_rotating_ = false;
 	bool init_flag_ = false;
@@ -456,13 +552,14 @@ private:
 	//Cmaera
 	int fid_ID=0;
 	float fid_area=0;
-	bool decision_flag=false;
 	bool turn_mode_start = false;
 
 	//Decision
 	unsigned int behavior_cnt =0;
 	int behavior_decision=STOP_MODE;
 	bool Charging_done_flag =false;
+	int HJ_mode=STOP_MODE;
+	int prev_HJ_mode = STOP_MODE;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;
@@ -472,6 +569,7 @@ private:
 	{
 		double global_dist_boundary_;
 		double global_angle_boundary_;
+		bool HJ_MODE_;
 	} Config;
 	Config config_;
 
@@ -482,10 +580,9 @@ void LocalizationNode::areaDataCallback(const std_msgs::Float32MultiArray::Const
 	fid_area =area_msgs->data[1];
 	ROS_INFO("fid_ID: %d, are: %f",fid_ID, fid_area);
 }
-void LocalizationNode::DecisionpublishCmd(const std_msgs::Bool::ConstPtr &decision_call)  //
+void LocalizationNode::DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call)
 {
-	//fid_ID, fid_area, 
-	decision_flag =true;
+	HJ_mode = mode_call->data;
 }
 bool LocalizationNode::docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp)
 //bool LocalizationNode::docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res)

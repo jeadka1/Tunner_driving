@@ -307,9 +307,9 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 					cmd_vel.linear.z = 0.0;
 					pub_cmd_.publish(cmd_vel);
 	        ros::Duration(1).sleep();
-					system("rosservice call /odom_init 0.0 0.0 0.0");
-					system("rosservice call /reset_odom");
-					system("rosservice call /pose_update 0.0 0.0 0.0");
+					system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+					system("rosservice call /reset_odom"); //Intialize IMU
+					system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
 					ros::Duration(5).sleep();
 				}
         //// 1. Joystick Driving
@@ -381,7 +381,6 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 						cmd_vel.linear.x = 0.0;
 	          cmd_vel.linear.z = 0.0;
 						pub_cmd_.publish(cmd_vel);
-		        //ros::Duration(0.5).sleep();
 					break;
 
 					case AUTO_LIDAR_MODE:
