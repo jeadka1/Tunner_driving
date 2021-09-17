@@ -108,6 +108,7 @@ private:
 			pub_localization_.publish(localization_msgs);
 			return;
 		}
+
 		bool is_arrived = false;
 		current_goal_ = goal_set_[goal_index_ % goal_count_];
 		ROS_INFO_ONCE("Goal is set: %f, %f", current_goal_.pose.position.x, current_goal_.pose.position.y);

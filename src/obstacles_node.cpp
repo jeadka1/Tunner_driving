@@ -144,7 +144,7 @@ private:
 		}
 		else{
 		//아무것도 못찾았을 경우 어떻게할까? 
-			std::cerr << "Not enough point for finding drain line" << std::endl;
+			//std::cerr << "Not enough point for finding drain line" << std::endl;
 			return;
 		}
 

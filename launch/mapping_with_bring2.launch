@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
+    <node pkg="rosservice" type="rosservice" name="rosservice" args="call /odom_init 0.0 0.0 0.0"/>
     <node pkg="gmapping" name="slam_gmapping" type="slam_gmapping" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/slam_gmapping.yaml"/>
     </node>
@@ -9,7 +10,7 @@
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="true"/>
     <arg name="use_static_tf" default="true"/>
-    <arg name="use_obs" default="false"/>
+    <arg name="use_obs" default="true"/>
      
 
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/>

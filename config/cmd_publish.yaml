@@ -6,9 +6,10 @@ robot_width: 0.8
 obs_coefficient: 0.5
 front_obs: 0.8
 boundary_percent: 0.02
-spare_length: 1.5
+spare_length: 0.3
 amcl_driving: false
-check_obstacles: false
+check_obstacles: true
+
 rot_kx: 0.1
 rot_ky: 0.05
 rot_kt: 1.0

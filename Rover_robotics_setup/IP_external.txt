@@ -1,0 +1,22 @@
+Laptop
+#sudo nano /etc/hosts
+192.168.1.20 local 		(Remote PC IP)
+192.168.2.10 cocel-NUC8v5PNH	(ROS mater PC IP)
+
+#bashrc
+
+export ROS_MASTER_URI=http://192.168.2.10:11311 (ROS master PC  IP)
+export ROS_HOSTNAME=192.168.1.20 (Remote PC IP)
+
+
+
+NUC
+#sudo nano /etc/hosts
+192.168.2.10 cocel-NUC8v5PNH		(ROS master PC  IP)
+192.168.1.20 cocel-GP63-Leopard-8RE	(Remote PC IP)
+
+#bashrc
+
+export ROS_IP=192.168.2.10 (ROS master PC IP)
+export ROS_MASTER_URI=http://localhost:11311
+export ROS_HOSTNAME=$ROS_IP

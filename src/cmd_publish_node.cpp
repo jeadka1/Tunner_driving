@@ -44,7 +44,7 @@ class CmdPublishNode : public nodelet::Nodelet {
 	// Obs
 	float obs_x_ = 10000;
 	float obs_y_ = 10000;	
-	bool temp_is_obs_in_aisle = false;
+	bool was_obs_in_aisle = false;
 	double spare_length = 0;
 	float Max_speed = 0.5;
 	unsigned int align_cnt=0;
@@ -79,6 +79,7 @@ class CmdPublishNode : public nodelet::Nodelet {
 	bool gmapping_go =false;
 
 
+
 public:
 	CmdPublishNode() = default;
 
@@ -98,7 +99,7 @@ private:
 	nhp.param("obs_coefficient", config_.obs_coefficient_, 0.5);
 	nhp.param("front_obs", config_.front_obs_, 0.6);
 	nhp.param("boundary_percent", config_.boundary_percent_, 0.02);
-        nhp.param("spare_length", config_.spare_length_, 1.5);
+        nhp.param("spare_length", config_.spare_length_, 0.3);
         nhp.param("amcl_driving", config_.amcl_driving_, false);
         nhp.param("check_obstacles", config_.check_obstacles_, false);
         nhp.param("rot_kx", config_.rot_kx_, 0.1);
@@ -230,21 +231,22 @@ private:
 
 void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 {
-	if(joy_driving_ || !gmapping_go) 
+	//if(joy_driving_ || !gmapping_go)
+	if(!gmapping_go)  
 		return;
+
       
       //// 2. Autonomous Driving
       geometry_msgs::Twist cmd_vel;
       double y_err_local = ref_y_ - near_y_;
       // 2.1 Check Obstacles
+	//std::cout<<" obs_y_ : "<<obs_y_ <<" obs_x_ : "<<obs_x_ << std::endl;
       if (config_.check_obstacles_)
 	{
-		temp_is_obs_in_aisle = true;
 		float line_length = line_end_y_ - line_start_y_;
 		float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
 		float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
 		bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
-		spare_length = 0;
           // (0) Front Obstacle Update
 	
           if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
@@ -252,16 +254,18 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 		cmd_vel.linear.x = 0.0;
 		cmd_vel.linear.z = 0.0;
 		pub_cmd_.publish(cmd_vel);
-		std::cout<<"Front obstacle is deteced"<<std::endl;		
+		std::cout<<"Front obstacle is deteced"<<std::endl;
 		return;
           }
-          /*
+         
 	// (1) Right Obstacle Update	
           else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_ < 0.6)
           {	
               std::cout << "Right obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
               float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
               y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
+		was_obs_in_aisle = true;
+		spare_length = 0;
           }
           // (2) Left Obstacle Update 
           else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_ < 0.6)
@@ -269,9 +273,11 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
               std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
               float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
               y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
+		was_obs_in_aisle = true;
+		spare_length = 0;
           }
           // (3) After obs disappear, go further 'spare_length'
-          if(is_obs_in_aisle != temp_is_obs_in_aisle)
+          if(!is_obs_in_aisle && was_obs_in_aisle)
           { 
               spare_length += config_.linear_vel_ * 0.1;
               y_err_local = 0;  
@@ -279,19 +285,23 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
               if(spare_length > config_.spare_length_)
               {
                   spare_length = 0;
-                  temp_is_obs_in_aisle = false;
+                  was_obs_in_aisle = false;
                   std::cout<<"spare finish"<<std::endl;
               }
           }
-*/
+
     	}
 
       // 2.2 Check Global Pose 
-
+	if(joy_driving_)
+		return;
+	else
+	{
       cmd_vel.linear.x = config_.linear_vel_;
 			cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
 			//std::cout<<"x: "<<cmd_vel.linear.x<< ", z: " << cmd_vel.angular.z<<std::endl;
 			pub_cmd_.publish(cmd_vel); 
+	}
 		}
     void publishCmd(const std_msgs::Int32::ConstPtr &driving_start)
     {
@@ -313,70 +323,76 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 					ros::Duration(5).sleep();
 				}
         //// 1. Joystick Driving
-        if(joy_driving_ || Mode_type == MANUAL_MODE) 
-		    return;
+        //if(joy_driving_ || Mode_type == MANUAL_MODE) 
+		    //return;
         
         //// 2. Autonomous Driving
 
         double y_err_local = ref_y_ - near_y_;
         // 2.1 Check Obstacles
-        if (config_.check_obstacles_)
-        {
-            temp_is_obs_in_aisle = true;
-            float line_length = line_end_y_ - line_start_y_;
-            float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
-        		float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
-            bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
-            spare_length = 0;
-            // (0) Front Obstacle Update
-		
-            if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
-            {
+
+      if (config_.check_obstacles_)
+	{
+		float line_length = line_end_y_ - line_start_y_;
+		float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
+		float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
+		bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
+		spare_length = 0;
+          // (0) Front Obstacle Update
+	
+          if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
+          {
 		cmd_vel.linear.x = 0.0;
-                cmd_vel.linear.z = 0.0;
-                pub_cmd_.publish(cmd_vel);
+		cmd_vel.linear.z = 0.0;
+		pub_cmd_.publish(cmd_vel);
 		std::cout<<"Front obstacle is deteced"<<std::endl;
-                return;
-            }
-            /*
-		// (1) Right Obstacle Update	
-            else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_ < 0.6)
-            {	
-                std::cout << "Right obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
-                float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
-                y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
-            }
-            // (2) Left Obstacle Update 
-            else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_ < 0.6)
-            {
-                std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
-                float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
-                y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
-            }
-            // (3) After obs disappear, go further 'spare_length'
-            if(is_obs_in_aisle != temp_is_obs_in_aisle)
-            { 
-                spare_length += config_.linear_vel_ * 0.1;
-                y_err_local = 0;  
-                std::cout<< "straight foward of spare distance" <<std::endl;
-                if(spare_length > config_.spare_length_)
-                {
-                    spare_length = 0;
-                    temp_is_obs_in_aisle = false;
-                    std::cout<<"spare finish"<<std::endl;
-                }
-            }
-			*/
+		return;
+          }
+         
+	// (1) Right Obstacle Update	
+          else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_ < 0.6)
+          {	
+              std::cout << "Right obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
+              float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
+              y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
+		was_obs_in_aisle = true;
+          }
+          // (2) Left Obstacle Update 
+          else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_ < 0.6)
+          {
+              std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
+              float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
+              y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
+		was_obs_in_aisle = true;
+          }
+          // (3) After obs disappear, go further 'spare_length'
+          if(!is_obs_in_aisle && was_obs_in_aisle)
+          { 
+              spare_length += config_.linear_vel_ * 0.1;
+              y_err_local = 0;  
+              std::cout<< "straight foward of spare distance" <<std::endl;
+              if(spare_length > config_.spare_length_)
+              {
+                  spare_length = 0;
+                  was_obs_in_aisle = false;
+                  std::cout<<"spare finish"<<std::endl;
+              }
+          }
 	    }
 				if(config_.Postech_code_)
 					Mode_type  = postech_mode_;
 
+				if(joy_driving_ || Mode_type == MANUAL_MODE)
+					Mode_type == MANUAL_MODE;
 
 				double straight_l_xerr, straight_l_yerr;
 				double comy_yerr;
 				double l_xerr,l_yerr;
 				switch(Mode_type)
 				{
+					case MANUAL_MODE:
+						return;
+					break;
 					case STOP_MODE:
 						cmd_vel.linear.x = 0.0;
 	          cmd_vel.linear.z = 0.0;
