@@ -383,7 +383,7 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 					Mode_type  = postech_mode_;
 
 				if(joy_driving_ || Mode_type == MANUAL_MODE)
-					Mode_type == MANUAL_MODE;
+					Mode_type = MANUAL_MODE;
 
 				double straight_l_xerr, straight_l_yerr;
 				double comy_yerr;
@@ -406,8 +406,7 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 						//comy_yerr= -g_x_err_ *sin(g_rtheta_) + g_y_err_ *cos(g_rtheta_); //rtheta_global theta
 						comy_yerr= liney_pose; //rtheta_global theta
 						//comy_yerr= g_rtheta_-atan2(g_y_err_,g_x_err_);
-            std::cout<<"sy err: "<<straight_l_yerr<<std::endl;
-            std::cout<<"compy err: "<<comy_yerr<<", liney_pose: "<<liney_pose<<std::endl;
+
 /*
 						std::cout<< "g_x_err_: " <<g_x_err_ <<" , g_y_err_: " <<g_y_err_ <<std::endl;
 						std::cout<< "rtheta: " <<g_rtheta_ <<" , ctheta: " <<g_ctheta_ <<std::endl;
@@ -416,6 +415,8 @@ void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
 */
 						if(config_.straight_) // straight test
 						{
+		          std::cout<<"sy err: "<<straight_l_yerr<<std::endl;
+	            std::cout<<"compy err: "<<comy_yerr<<", liney_pose: "<<liney_pose<<std::endl;
 	            cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
 	            //cmd_vel.linear.x = config_.linear_vel_;
 	            //cmd_vel.angular.z = config_.Kpy_param_ * straight_l_yerr + config_.Kpy_param_straight_*comy_yerr; //g_rtheta

@@ -268,7 +268,7 @@ private:
 			break;
 		}
 	}
-	{
+	else{
 //----------------------------------------------- postech mode
 		switch(behavior_cnt) // Behave in turn
 		{
@@ -353,6 +353,11 @@ private:
 
 				is_rotating_ =false;
 				//goal_index_++;//???
+
+				//Without docking				
+				behavior_cnt=0;
+				behavior_decision = STOP_MODE; 
+				goal_index_ ++;
 			}
 			break;
 
