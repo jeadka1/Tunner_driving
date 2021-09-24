@@ -4,7 +4,7 @@
     <param name="/use_sim_time" value="false"/>
     <arg name="use_rp" default="true"/>
     <arg name="use_velo" default="true"/>
-    <arg name="use_joy" default="false"/>
+    <arg name="use_joy" default="true"/>
     <arg name="use_postech_pos" default="false"/>
     <arg name="use_static_tf" default="true"/>
     <arg name="use_mode" default="true"/>

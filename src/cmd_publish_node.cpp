@@ -115,6 +115,8 @@ private:
     nhp.param("Kpy_param_straight", config_.Kpy_param_straight_, 1.1);
     nhp.param("Postech_code", config_.Postech_code_, false);
     nhp.param("straight_align_bound", config_.straight_align_bound_, 0.1);
+    nhp.param("obs_avoidance_distance", config_.obs_avoidance_distance_, 0.1);
+
 
 
 
@@ -273,7 +275,7 @@ private:
                 //float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
                 //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
                 //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
-								y_err_local = ref_y_-0.1 - near_y_;
+								y_err_local = ref_y_-config_.obs_avoidance_distance_ - near_y_;
                 temp_y_err_local = y_err_local;
                 was_obs_in_aisle = true;
                 spare_length = 0;
@@ -285,7 +287,7 @@ private:
                 //float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
                 //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
 //                y_err_local = (obs_y_+line_start_y_)/2 - near_y_;
-								y_err_local = ref_y_+0.1 - near_y_;
+								y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
                 temp_y_err_local = y_err_local;
                 was_obs_in_aisle = true;
                 spare_length = 0;
@@ -294,7 +296,7 @@ private:
             if(!is_obs_in_aisle && was_obs_in_aisle)
             { 
                 spare_length += config_.linear_vel_ * 0.1;
-                y_err_local = temp_y_err_local;  
+                y_err_local =ref_y_+config_.obs_avoidance_distance_ - near_y_;
                 std::cout<< "straight foward of spare distance" <<std::endl;
                 if(spare_length > config_.spare_length_)
                 {
@@ -374,7 +376,7 @@ private:
                 //float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
                 //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
                 //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
-								y_err_local = ref_y_-0.1 - near_y_;
+								y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
                 temp_y_err_local = y_err_local;
                 was_obs_in_aisle = true;
                 spare_length = 0;
@@ -386,7 +388,7 @@ private:
                 //float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
                 //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
 //                y_err_local = (obs_y_+line_start_y_)/2 - near_y_;
-								y_err_local = ref_y_+0.1 - near_y_;
+								y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
                 temp_y_err_local = y_err_local;
                 was_obs_in_aisle = true;
                 spare_length = 0;
@@ -395,7 +397,7 @@ private:
             if(!is_obs_in_aisle && was_obs_in_aisle)
             { 
                 spare_length += config_.linear_vel_ * 0.1;
-                y_err_local = temp_y_err_local;  
+                y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
                 std::cout<< "straight foward of spare distance" <<std::endl;
                 if(spare_length > config_.spare_length_)
                 {
@@ -630,6 +632,7 @@ private:
         double line_width_max_;
         bool amcl_driving_;
         bool check_obstacles_;
+		
 		double rot_kx_;
 		double rot_ky_;
 		double rot_kt_;
@@ -640,7 +643,8 @@ private:
 		bool straight_;
 		double Kpy_param_straight_;
 		bool Postech_code_;
-        double straight_align_bound_;
+    double straight_align_bound_;
+		double obs_avoidance_distance_;
 	} Config;
 	Config config_;
 };

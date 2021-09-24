@@ -9,6 +9,7 @@ boundary_percent: 0.02
 spare_length: 0.3
 amcl_driving: false
 check_obstacles: true
+obs_avoidance_distance: 0.1
 
 rot_kx: 0.1
 rot_ky: 0.05
@@ -21,3 +22,4 @@ straight: false #1 for straight control, 2 for tunnel
 Kpy_param_straight: 2.0 #y compenstation for staright prev_2.0
 Postech_code: true #to operate only (true)postech or (false) hanjeon
 straight_align_bound: 0.2
+
