@@ -54,6 +54,8 @@ private:
 		nhp.param("global_dist_boundary", config_.global_dist_boundary_, 0.3);
 		nhp.param("global_angle_boundary", config_.global_angle_boundary_, 0.05);
 		nhp.param("HJ_MODE", config_.HJ_MODE_, true);
+		nhp.param("only_regular_move", config_.only_regular_move_, false);
+
 
 
 		sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);    
@@ -84,6 +86,21 @@ private:
 		pub_robot_pose_.publish(pose_msg);
 		std_msgs::Float32MultiArray localization_msgs;
 		localization_msgs.data.clear();
+
+/*
+		geometry_msgs::PoseStamped saved_point1, saved_point2;
+		goal_count=2;
+		if(goal_index_ % goal_count_ ==0)
+		{
+			saved_point1.pose.position.x = 2.91127443314;
+			saved_point1.pose.position.y = -0.030445933342;
+		}
+		else
+		{
+			saved_point2.pose.position.x = 0.498938083649;
+			saved_point2.pose.position.y = 0.00525569915771;
+		}
+*/
 		if (goal_count_ < 2)
 		{
 			ROS_INFO_ONCE("Waiting for inserting goal... ");
@@ -120,7 +137,7 @@ private:
 		ROS_INFO_ONCE("Goal 2 is set: %f, %f", print_point.pose.position.x, print_point.pose.position.y);
 		
 		
-
+		
 		// 1. Calculate Global Error
 		float global_x_err = current_goal_.pose.position.x - pose_msg->pose.pose.position.x;
 		float global_y_err = current_goal_.pose.position.y - pose_msg->pose.pose.position.y;
@@ -251,6 +268,7 @@ private:
 			if(fid_ID==4 && fid_area >=5000)
 			{
 				init_start_ = true;
+				
 				goal_index_ ++; //TODO ?? 
 				QR_msg.data =4;
 				pub_QR_.publish(QR_msg);//
@@ -352,12 +370,14 @@ private:
 				behavior_decision = STOP_MODE; 
 
 				is_rotating_ =false;
-				//goal_index_++;//???
 
-				//Without docking				
-				behavior_cnt=0;
-				behavior_decision = STOP_MODE; 
-				goal_index_ ++;
+				//Without docking
+				if(config_.only_regular_move_)
+				{
+					behavior_cnt=0;
+					behavior_decision = STOP_MODE; 
+					goal_index_ ++;
+				}
 			}
 			break;
 
@@ -576,6 +596,7 @@ private:
 		double global_dist_boundary_;
 		double global_angle_boundary_;
 		bool HJ_MODE_;
+		bool only_regular_move_;
 	} Config;
 	Config config_;
 

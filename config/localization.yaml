@@ -1,3 +1,4 @@
 global_dist_boundary: 0.3
 global_angle_boundary: 0.05 #0.05
-HJ_MODE: false
+HJ_MODE: false #To move with Hanjeon mode subscribe
+only_regular_move: true #Wihout dokcing test

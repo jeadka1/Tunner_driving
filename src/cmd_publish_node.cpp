@@ -160,8 +160,8 @@ private:
         if(joy_driving_)
         { 
             geometry_msgs::Twist cmd_vel;
-            cmd_vel.linear.x = joy_msg -> axes[1] * 0.5;
-            cmd_vel.angular.z = joy_msg -> axes[0] * 0.5;
+            cmd_vel.linear.x = joy_msg -> axes[1] * 1.0;
+            cmd_vel.angular.z = joy_msg -> axes[0] * 1.0;
             pub_cmd_.publish(cmd_vel);
             return;
         }
@@ -254,7 +254,6 @@ private:
             bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
             // (0) Front Obstacle Update
         		
-						std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
 
             if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
             {
@@ -296,7 +295,7 @@ private:
             if(!is_obs_in_aisle && was_obs_in_aisle)
             { 
                 spare_length += config_.linear_vel_ * 0.1;
-                y_err_local =ref_y_+config_.obs_avoidance_distance_ - near_y_;
+                y_err_local = temp_y_err_local;
                 std::cout<< "straight foward of spare distance" <<std::endl;
                 if(spare_length > config_.spare_length_)
                 {
@@ -355,7 +354,7 @@ private:
             bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
             // (0) Front Obstacle Update
         		
-						std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
+						//std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
 
             if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
             {
@@ -376,7 +375,7 @@ private:
                 //float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
                 //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
                 //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
-								y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
+								y_err_local = ref_y_-config_.obs_avoidance_distance_ - near_y_;
                 temp_y_err_local = y_err_local;
                 was_obs_in_aisle = true;
                 spare_length = 0;
@@ -397,7 +396,7 @@ private:
             if(!is_obs_in_aisle && was_obs_in_aisle)
             { 
                 spare_length += config_.linear_vel_ * 0.1;
-                y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
+                y_err_local = temp_y_err_local;
                 std::cout<< "straight foward of spare distance" <<std::endl;
                 if(spare_length > config_.spare_length_)
                 {
