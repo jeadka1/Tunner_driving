@@ -56,7 +56,7 @@ private:
 		// Configuration //
 		nhp.param("global_dist_boundary", config_.global_dist_boundary_, 0.3);
 		nhp.param("global_angle_boundary", config_.global_angle_boundary_, 0.05);
-		nhp.param("HJ_MODE", config_.HJ_MODE_, true);
+		nhp.param("HJ_MODE", config_.HJ_MODE_, 0);
 		nhp.param("only_regular_move", config_.only_regular_move_, false);
 
 
@@ -78,7 +78,8 @@ private:
 	void DockingCallback(const std_msgs::Empty::ConstPtr& joy_msg)
 	{
 		ROS_INFO("Joy A: Behavior ++");
-		behavior_cnt++;
+		if(config_.HJ_MODE_!=0)
+			behavior_cnt++;
 	}
 	
 	void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg)
@@ -212,7 +213,7 @@ private:
 
 		std_msgs::Int32 QR_msg;
 		
-		if(config_.HJ_MODE_){
+		if(config_.HJ_MODE_==0){
 		switch(HJ_mode) //To decide what the mobile robot does
 		{
 		case AUTO_LIDAR_MODE:
@@ -304,248 +305,296 @@ private:
 			break;
 		}
 	}
-	else{
 //----------------------------------------------- postech mode
+	else if(config_.HJ_MODE_==1){ //With docking postech mode
 		switch(behavior_cnt) // Behave in turn
 		{
 		case 0://moving to go turning point: start straight
 			init_start_ = false;
-			behavior_decision = AUTO_LIDAR_MODE;
+			postect_mode = AUTO_LIDAR_MODE;
 			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
 			{
-				STOP_cnt++;
-				if(STOP_cnt >=20)
-				{
-					STOP_cnt =0;
-					behavior_cnt++;
-				}
-				behavior_decision = STOP_MODE;
+				behavior_cnt++;
+				postect_mode = STOP_MODE;
 			}
 			break;
 
 		case 1://turn : QR or goal pose
-			behavior_decision = TURN_MODE;
-			
-			if(!is_rotating_)
+			if(STOP_cnt<20)
 			{
-				is_rotating_ =true;
-				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-				static_x = pose_msg->pose.pose.position.x;
-				static_y = pose_msg->pose.pose.position.y;
-				goal_yaw = yaw + M_PI; // save current when start rotating
-				if(goal_yaw > M_PI)
-					goal_yaw -= 2*M_PI;
-				else if(goal_yaw < -M_PI)
-					goal_yaw += 2*M_PI;
+				STOP_cnt++;
+				postect_mode = STOP_MODE;//moving
 			}
-
-			global_ang_err = goal_yaw - yaw;  
-			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
-			if(global_ang_err > M_PI)
-				global_ang_err -= 2*M_PI;
-			else if(global_ang_err < -M_PI)
-				global_ang_err += 2*M_PI;
-			if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+			else
 			{
-				behavior_cnt++;
-				behavior_decision = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
+				postect_mode = TURN_MODE;
+				
+				if(!is_rotating_)
+				{
+					is_rotating_ =true;
+					std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+					static_x = pose_msg->pose.pose.position.x;
+					static_y = pose_msg->pose.pose.position.y;
+					goal_yaw = yaw + M_PI; // save current when start rotating
+					if(goal_yaw > M_PI)
+						goal_yaw -= 2*M_PI;
+					else if(goal_yaw < -M_PI)
+						goal_yaw += 2*M_PI;
+				}
 
-				is_rotating_ =false;
-				goal_index_++;				
+				global_ang_err = goal_yaw - yaw;  
+				std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
+				if(global_ang_err > M_PI)
+					global_ang_err -= 2*M_PI;
+				else if(global_ang_err < -M_PI)
+					global_ang_err += 2*M_PI;
+				if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+				{
+					behavior_cnt++;
+					postect_mode = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
+
+					is_rotating_ =false;
+					goal_index_++;			
+					STOP_cnt=0;	
+				}
+				static_x_err = static_x - pose_msg->pose.pose.position.x;
+				static_y_err = static_y - pose_msg->pose.pose.position.y;
+				static_t = goal_yaw;
+				static_ct = yaw;
 			}
 			break;
 
 		case 2: //moving back to home
-			behavior_decision = AUTO_LIDAR_MODE;
+			postect_mode = AUTO_LIDAR_MODE;
 			
 			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 2) )
 			{
-				STOP_cnt++;
-				if(STOP_cnt >=20)
-				{
-					STOP_cnt =0;
-					behavior_cnt++;
-				}
-				behavior_decision = STOP_MODE;
+				behavior_cnt++;
+				postect_mode = STOP_MODE;
 			}
 			break;
 
 		case 3://stop -> turn : QR or goal pose
-			behavior_decision = TURN_MODE;
-			if(!is_rotating_)
+			if(STOP_cnt<20)
 			{
-				is_rotating_ =true;
-				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-				static_x = pose_msg->pose.pose.position.x;
-				static_y = pose_msg->pose.pose.position.y;
-				goal_yaw = yaw + M_PI; // save current when start rotating
-				if(goal_yaw > M_PI)
-					goal_yaw -= 2*M_PI;
-				else if(goal_yaw < -M_PI)
-					goal_yaw += 2*M_PI;
+				STOP_cnt++;
+				postect_mode = STOP_MODE;//moving
 			}
-
-			global_ang_err = goal_yaw - yaw;  
-			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
-			if(global_ang_err > M_PI)
-				global_ang_err -= 2*M_PI;
-			else if(global_ang_err < -M_PI)
-				global_ang_err += 2*M_PI;
-
-			if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
-			{
-				behavior_cnt++;
-				behavior_decision = STOP_MODE; 
-
-				is_rotating_ =false;
-
-				//Without docking
-				if(config_.only_regular_move_)
+			else
+			{			
+				postect_mode = TURN_MODE;
+				if(!is_rotating_)
 				{
-					behavior_cnt=0;
-					behavior_decision = STOP_MODE; 
-					goal_index_ ++;
+					is_rotating_ =true;
+					std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+					static_x = pose_msg->pose.pose.position.x;
+					static_y = pose_msg->pose.pose.position.y;
+					goal_yaw = yaw + M_PI; // save current when start rotating
+					if(goal_yaw > M_PI)
+						goal_yaw -= 2*M_PI;
+					else if(goal_yaw < -M_PI)
+						goal_yaw += 2*M_PI;
 				}
+
+				global_ang_err = goal_yaw - yaw;  
+				std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
+				if(global_ang_err > M_PI)
+					global_ang_err -= 2*M_PI;
+				else if(global_ang_err < -M_PI)
+					global_ang_err += 2*M_PI;
+
+				if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+				{
+					behavior_cnt++;
+					postect_mode = STOP_MODE; 
+
+					is_rotating_ =false;
+					STOP_cnt =0;
+				}
+				static_x_err = static_x - pose_msg->pose.pose.position.x;
+				static_y_err = static_y - pose_msg->pose.pose.position.y;
+				static_t = goal_yaw;
+				static_ct = yaw;
 			}
 			break;
 
 		case 4:// docking in : 
-			behavior_decision = DOCK_IN_MODE;//moving
+			postect_mode = DOCK_IN_MODE;//moving
 			if(fid_area >=5000 && fid_ID == 3)
 			{
 				behavior_cnt++;
-				behavior_decision = STOP_MODE; 
+				postect_mode = STOP_MODE; 
 			}
 			break;
 
 		case 5://wait : before resservice call
-			behavior_decision = STOP_MODE; 
+			postect_mode = STOP_MODE; 
 			if(Charging_done_flag)//rosserive call
 			{
 				behavior_cnt++;
-				behavior_decision = STOP_MODE; 
+				postect_mode = STOP_MODE; 
 
 				Charging_done_flag =0;
 			}
 			break;
 
 		case 6://dokcing_out : rostopic pub ending_charging
-			behavior_decision = DOCK_OUT_MODE;//moving
+			postect_mode = DOCK_OUT_MODE;//moving
 			if(fid_area >=5000 && fid_ID == 4)// To use AMCL pose probably
 			{
 				behavior_cnt=0;
-				behavior_decision = STOP_MODE; 
+				postect_mode = STOP_MODE; 
 				init_start_ = true;
 				goal_index_ ++;
 			}
 			break;
 		default:
 			//behavior_cnt=0;
-			behavior_decision = STOP_MODE;
+			postect_mode = STOP_MODE;
 			ROS_INFO("Behavior error");
 			break;
 		}
-
-
 		ROS_INFO("Behavior count: %d, %d", behavior_cnt, behavior_decision);
-//-----------------------------------------------------------------------------------------------------
-		switch(behavior_decision) //To decide what the mobile robot does
-		{
-		case AUTO_LIDAR_MODE:
-			postect_mode = AUTO_LIDAR_MODE;//moving
-			//is_rotating_= false;
-			break;
-
-		case TURN_MODE:
-			postect_mode = TURN_MODE;//moving
-			
-			static_x_err = static_x - pose_msg->pose.pose.position.x;
-			static_y_err = static_y - pose_msg->pose.pose.position.y;
-			static_t = goal_yaw;
-			static_ct = yaw;
-
-			break;
-
-		case DOCK_IN_MODE:
-			postect_mode = DOCK_IN_MODE;//moving
-			//is_rotating_= false;
-			break;
-
-		case DOCK_OUT_MODE:
-			postect_mode = DOCK_OUT_MODE;//moving
-			//is_rotating_= false;
-			break;
-
-		case STOP_MODE:
-			postect_mode = STOP_MODE;//moving
-			//is_rotating_= false;
-			break;
-
-
-		default :
-
-			break;
-		}
 	}
+//-----------------------------------------------------------------------------------------------------
+	else if(config_.HJ_MODE_==2){ // without docking
+		switch(behavior_cnt) // Behave in turn
+		{
+		case 0://moving to go turning point: start straight
+			init_start_ = false;
+			postect_mode = AUTO_LIDAR_MODE;
+			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
+			{
+				behavior_cnt++;
+				postect_mode = STOP_MODE;
+			}
+			break;
 
-		
-//----------------------------------------------- prvious // is_rotating is essential
-/*
-		if (global_dist_err > config_.global_dist_boundary_ && !is_rotating_) 
-		{
-			is_arrived = false;
-			global_ang_err = M_PI;
-			postect_mode = AUTO_LIDAR_MODE;//moving
-		}
-	
-		// 2.2 Arrived to the goal position
-		else
-		{
-			if(arrvial_flag ) //TODO ???
+		case 1://turn : QR or goal pose
+			if(STOP_cnt<20)
 			{
-				arrvial_flag = false;
-				postect_mode = STOP_MODE;//to finish rotate (stop)
+				STOP_cnt++;
+				postect_mode = STOP_MODE;//moving
 			}
-			is_arrived = true;
-		
-			if(!is_rotating_) 
+			else
 			{
-				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-				static_x = pose_msg->pose.pose.position.x;
-				static_y = pose_msg->pose.pose.position.y;
-				goal_yaw = yaw + M_PI; // save current when start rotating
-				if(goal_yaw > M_PI)
-					goal_yaw -= 2*M_PI;
-				else if(goal_yaw < -M_PI)
-					goal_yaw += 2*M_PI;
-				is_rotating_ = true;
-				postect_mode =TURN_MODE; //rotating
+				postect_mode = TURN_MODE;//moving
+				if(!is_rotating_)
+				{
+					is_rotating_ =true;
+					std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+					static_x = pose_msg->pose.pose.position.x;
+					static_y = pose_msg->pose.pose.position.y;
+					goal_yaw = yaw + M_PI; // save current when start rotating
+					if(goal_yaw > M_PI)
+						goal_yaw -= 2*M_PI;
+					else if(goal_yaw < -M_PI)
+						goal_yaw += 2*M_PI;
+				}
+				global_ang_err = goal_yaw - yaw;  
+				std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
+				if(global_ang_err > M_PI)
+					global_ang_err -= 2*M_PI;
+				else if(global_ang_err < -M_PI)
+					global_ang_err += 2*M_PI;
+				if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+				{
+					STOP_cnt=0;
+					behavior_cnt++;
+					postect_mode = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
+
+					is_rotating_ =false;
+					goal_index_++;				
+				}
+				static_x_err = static_x - pose_msg->pose.pose.position.x;
+				static_y_err = static_y - pose_msg->pose.pose.position.y;
+				static_t = goal_yaw;
+				static_ct = yaw;
 			}
-			static_x_err = static_x - pose_msg->pose.pose.position.x;
-			static_y_err = static_y - pose_msg->pose.pose.position.y;
-			static_t = goal_yaw;
-			static_ct = yaw;
-				
-			// 2.2.1 Check whether robot should rotate
-				//To rotate 180 degree from the position where the mobile robot is arrived. // goalyaw mean "arrival yaw"
-			global_ang_err = goal_yaw - yaw;  
-			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<<std::endl;
-			if(global_ang_err > M_PI)
-				global_ang_err -= 2*M_PI;
-			else if(global_ang_err < -M_PI)
-				global_ang_err += 2*M_PI;
+
 			
-			std::cout<<"rotating ... bounded_angle_err: "<<global_ang_err<<std::endl;
-			if(abs(global_ang_err) < config_.global_angle_boundary_)
+			break;
+
+		case 2: //moving back to home
+			postect_mode = AUTO_LIDAR_MODE;
+			
+			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 2) )
 			{
-				std::cout<<"finish rotation"<<std::endl;
-				goal_index_++;
-				is_rotating_ = false; //To go another position 
-				is_arrived = false;
-				postect_mode = STOP_MODE;//to finish rotate (stop) (AUTO_PRE_LIDAR_MODE)
+				behavior_cnt++;
+				postect_mode = STOP_MODE;
 			}
+			break;
+
+		case 3://stop -> turn : QR or goal pose
+			if(STOP_cnt<20)
+			{
+				STOP_cnt++;
+				postect_mode = STOP_MODE;//moving
+			}
+			else
+			{
+				postect_mode = TURN_MODE;//moving
+				if(!is_rotating_)
+				{
+					is_rotating_ =true;
+					std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+					static_x = pose_msg->pose.pose.position.x;
+					static_y = pose_msg->pose.pose.position.y;
+					goal_yaw = yaw + M_PI; // save current when start rotating
+					if(goal_yaw > M_PI)
+						goal_yaw -= 2*M_PI;
+					else if(goal_yaw < -M_PI)
+						goal_yaw += 2*M_PI;
+				}
+				global_ang_err = goal_yaw - yaw;  
+				std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
+				if(global_ang_err > M_PI)
+					global_ang_err -= 2*M_PI;
+				else if(global_ang_err < -M_PI)
+					global_ang_err += 2*M_PI;
+
+				if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+				{
+					STOP_cnt=0;
+					behavior_cnt++;
+					postect_mode = STOP_MODE; 
+
+					is_rotating_ =false;
+					goal_index_++;
+
+					//Without docking & no QR
+					if(config_.only_regular_move_)
+					{
+						behavior_cnt=0;
+						postect_mode = STOP_MODE; 
+						goal_index_++;
+					}
+					
+				}
+				static_x_err = static_x - pose_msg->pose.pose.position.x;
+				static_y_err = static_y - pose_msg->pose.pose.position.y;
+				static_t = goal_yaw;
+				static_ct = yaw;
+			}
+			break;
+		case 4://Before starting, initialize the position
+			postect_mode = AUTO_LIDAR_MODE;
+			if(fid_area >=5000 && fid_ID == 3)
+			{
+				behavior_cnt=0;
+				init_start_ =true;
+				postect_mode = STOP_MODE;
+				ROS_INFO("fid_area: %f", fid_area);
+			}
+			break;
+		default:
+			//behavior_cnt=0;
+			postect_mode = STOP_MODE;
+			ROS_INFO("Behavior error");
+			break;
 		}
-*/
+		ROS_INFO("Behavior count: %d, %d", behavior_cnt, behavior_decision);
+	}
 
 //-----------------------------------------------
 		localization_msgs.data.push_back(global_dist_err);
@@ -625,7 +674,7 @@ private:
 	{
 		double global_dist_boundary_;
 		double global_angle_boundary_;
-		bool HJ_MODE_;
+		int HJ_MODE_;
 		bool only_regular_move_;
 	} Config;
 	Config config_;

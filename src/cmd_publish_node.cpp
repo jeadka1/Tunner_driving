@@ -281,7 +281,7 @@ private:
                 //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
                 //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
 								y_err_local = ref_y_-config_.obs_avoidance_distance_ - near_y_;
-                temp_y_err_local = y_err_local;
+                temp_y_err_local = 1;
                 was_obs_in_aisle = true;
                 spare_length = 0;
             }
@@ -293,7 +293,7 @@ private:
                 //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
 //                y_err_local = (obs_y_+line_start_y_)/2 - near_y_;
 								y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
-                temp_y_err_local = y_err_local;
+                temp_y_err_local = -1;
                 was_obs_in_aisle = true;
                 spare_length = 0;
             }
@@ -301,7 +301,10 @@ private:
             if(!is_obs_in_aisle && was_obs_in_aisle)
             { 
                 spare_length += config_.linear_vel_ * 0.1;
-                y_err_local = temp_y_err_local;
+								if(temp_y_err_local ==1)
+									y_err_local = ref_y_ - config_.obs_avoidance_distance_ - near_y_;
+								else if (temp_y_err_local == -1)
+									y_err_local = ref_y_ + config_.obs_avoidance_distance_ - near_y_;
                 std::cout<< "straight foward of spare distance" <<std::endl;
                 if(spare_length > config_.spare_length_)
                 {
@@ -361,7 +364,7 @@ private:
             // (0) Front Obstacle Update
         		
 						//std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
-
+/*
             if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
             {
                 cmd_vel.linear.x = 0.0;
@@ -369,10 +372,10 @@ private:
                 pub_cmd_.publish(cmd_vel);
                 std::cout<<"Front obstacle is deteced"<<std::endl;
                 return;
-            }
+            }*/ // below  else if
             
         // (1) Right Obstacle Update	(y:오른쪽이 음수)
-            else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 0.6)
+            if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 0.6)
             {	
 //Start- end = length
 //robot_length = 0.5m
@@ -382,7 +385,7 @@ private:
                 //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
                 //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
 								y_err_local = ref_y_-config_.obs_avoidance_distance_ - near_y_;
-                temp_y_err_local = y_err_local;
+                temp_y_err_local = 1;
                 was_obs_in_aisle = true;
                 spare_length = 0;
             }
@@ -394,7 +397,7 @@ private:
                 //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
 //                y_err_local = (obs_y_+line_start_y_)/2 - near_y_;
 								y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
-                temp_y_err_local = y_err_local;
+                temp_y_err_local = -1;
                 was_obs_in_aisle = true;
                 spare_length = 0;
             }
@@ -402,7 +405,11 @@ private:
             if(!is_obs_in_aisle && was_obs_in_aisle)
             { 
                 spare_length += config_.linear_vel_ * 0.1;
-                y_err_local = temp_y_err_local;
+                //y_err_local = temp_y_err_local;
+		if(temp_y_err_local ==1)
+			y_err_local = ref_y_ - config_.obs_avoidance_distance_ - near_y_;
+		else if (temp_y_err_local == -1)
+			y_err_local = ref_y_ + config_.obs_avoidance_distance_ - near_y_;
                 std::cout<< "straight foward of spare distance" <<std::endl;
                 if(spare_length > config_.spare_length_)
                 {
@@ -530,7 +537,7 @@ private:
                 std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
 		//l_xerr -= 0.03;
                 cmd_vel.linear.x = config_.rot_kx_*l_xerr*5.0;
-                cmd_vel.angular.z = config_.rot_ky_ *l_xerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
+                cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
 
                 //Saturation parts due to Zero's deadline from VESC
                 //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
@@ -601,6 +608,7 @@ private:
             break;					
 
             default:
+							ROS_INFO("mode/low is not defined");
             break;
         }
 
