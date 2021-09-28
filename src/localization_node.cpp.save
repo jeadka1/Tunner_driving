@@ -231,28 +231,20 @@ private:
 			break;
 
 		case TURN_MODE:
-			if(STOP_cnt<20)
-			{
-				STOP_cnt++;
-				postect_mode = STOP_MODE;//moving
-			}
-			else
-			{
-				postect_mode = TURN_MODE;//moving
-				if(!is_rotating_)
-				{
-					is_rotating_ =true;
-					std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-					static_x = pose_msg->pose.pose.position.x;
-					static_y = pose_msg->pose.pose.position.y;
-					goal_yaw = yaw + M_PI; // save current when start rotating
-					if(goal_yaw > M_PI)
-						goal_yaw -= 2*M_PI;
-					else if(goal_yaw < -M_PI)
-						goal_yaw += 2*M_PI;
-				}
-			}
+			postect_mode = TURN_MODE;//moving
 			
+			if(!is_rotating_)
+
+				is_rotating_ =true;
+				std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
+				static_x = pose_msg->pose.pose.position.x;
+				static_y = pose_msg->pose.pose.position.y;
+				goal_yaw = yaw + M_PI; // save current when start rotating
+				if(goal_yaw > M_PI)
+					goal_yaw -= 2*M_PI;
+				else if(goal_yaw < -M_PI)
+					goal_yaw += 2*M_PI;
+			}
 
 			global_ang_err = goal_yaw - yaw;  
 			std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
@@ -264,8 +256,7 @@ private:
 			if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
 			{
 				//is_rotating_ =false;
-				STOP_cnt =0;
-				goal_index_++;
+				goal_index_++;	//TODO ?? 
 			}
 
 			static_x_err = static_x - pose_msg->pose.pose.position.x;
@@ -313,12 +304,7 @@ private:
 			behavior_decision = AUTO_LIDAR_MODE;
 			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
 			{
-				STOP_cnt++;
-				if(STOP_cnt >=20)
-				{
-					STOP_cnt =0;
-					behavior_cnt++;
-				}
+				behavior_cnt++;
 				behavior_decision = STOP_MODE;
 			}
 			break;
@@ -360,12 +346,7 @@ private:
 			
 			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 2) )
 			{
-				STOP_cnt++;
-				if(STOP_cnt >=20)
-				{
-					STOP_cnt =0;
-					behavior_cnt++;
-				}
+				behavior_cnt++;
 				behavior_decision = STOP_MODE;
 			}
 			break;
@@ -614,8 +595,7 @@ private:
 	int behavior_decision=STOP_MODE;
 	bool Charging_done_flag =false;
 	int HJ_mode=STOP_MODE;
-
-	unsigned int STOP_cnt =0;
+	int prev_HJ_mode = STOP_MODE;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;

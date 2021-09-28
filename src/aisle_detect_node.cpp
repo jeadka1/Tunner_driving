@@ -79,6 +79,7 @@ private:
 		if (cloud_inrange->size() == 0)
 		{
 			this->pub_lidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
+			this->pub_prelidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
 			ROS_WARN("all points are cropped");
 			return;
 		}
@@ -131,6 +132,7 @@ private:
 		if((*cloud_cluster).size() == 0)
 		{
 			this->pub_lidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
+			this->pub_prelidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
 			ROS_WARN("Not enough points!");
 			return;
 		} 

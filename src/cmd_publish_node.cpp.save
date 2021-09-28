@@ -132,12 +132,12 @@ private:
 
 
     sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &CmdPublishNode::SpeedCallback, this);
-    //sub_integratedpose_ = nhp.subscribe("/state/pose", 1, &CmdPublishNode::PoseCallback, this);
+    sub_integratedpose_ = nhp.subscribe("/state/pose", 1, &CmdPublishNode::PoseCallback, this);
 
     //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &CmdPublishNode::areaDataCallback, this);
 
     pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
-    pub_docking_end_ = nhp.advertise<std_msgs::Empty> ("/Doclking_done", 1); // Temperary To finish with joystick
+    pub_docking_end_ = nhp.advertise<std_msgs::Empty> ("/Doclking_done", 1);
     pub_prelidar_end_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/end", 10);
 	};
 
@@ -206,10 +206,9 @@ private:
     {
         Max_speed = speed_msgs->data;
     }
-/*
     void PoseCallback(const geometry_msgs::PoseStamped::ConstPtr& pose_msgs)
     {
-    }*/
+    }
     void localDataCallback(const std_msgs::Float32MultiArray::ConstPtr& local_msgs)
     {
         global_dist_err_ = local_msgs->data[0]; 
@@ -528,8 +527,10 @@ private:
                 l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
                 l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
                 std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
-		//l_xerr -= 0.03;
-                cmd_vel.linear.x = config_.rot_kx_*l_xerr*5.0;
+		l_xerr -= 0.08;
+ //*cos(global_c_theta_);
+		l_yerr -= 0.08; *sin(global_c_theta_);
+                cmd_vel.linear.x = config_.rot_kx_*l_xerr*3.0;
                 cmd_vel.angular.z = config_.rot_ky_ *l_xerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
 
                 //Saturation parts due to Zero's deadline from VESC
@@ -617,7 +618,7 @@ private:
 	ros::Subscriber sub_driving_;
 	//ros::Subscriber sub_area_;
 	ros::Subscriber sub_speed_;
-	//ros::Subscriber sub_integratedpose_;
+	ros::Subscriber sub_integratedpose_;
     
 	ros::Publisher pub_cmd_;
 	ros::Publisher pub_prelidar_end_;
