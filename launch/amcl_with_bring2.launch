@@ -10,7 +10,7 @@
     <arg name="use_mode" default="true"/>
     <arg name="use_obs" default="true"/>
 
-    <arg name="map_file" default="/home/cocel/catkin_ws/maps/ground_2nd.yaml"/> <!-- in front of computer -->
+    <arg name="map_file" default="/home/cocel/catkin_ws/maps/docking_test.yaml"/> <!-- in front of computer -->
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/second_b_test2.yaml"/--> <!-- In front of room -->
 
 
@@ -66,8 +66,8 @@
     
     <!-- STATIC TF PUBLISHER -->
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_rp" args="0 0 0 3.141592 0 0 base_link laser 100" />
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_velo" args="0.08 0 0 0 0 0 base_link velodyne 100" />
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_imu" args="0.1 0 0 0.0 0 0 base_link imu 100" />
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_velo" args="0.0635 0 0 0 0 0 base_link velodyne 100" />
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_imu" args="0.066 0 0 0.0 0 0 base_link imu 100" />
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="map_to_odom" args="0 0 0 0.0 0 0 map odom 100" />
 
 

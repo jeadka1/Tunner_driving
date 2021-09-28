@@ -11,7 +11,7 @@ amcl_driving: false
 check_obstacles: true
 obs_avoidance_distance: 0.1
 
-rot_kx: 0.1
+rot_kx: 0.1 #0.1
 rot_ky: 0.05
 rot_kt: 1.0
 min_vel: 0.05 # The rover robotics can't move specific low speed

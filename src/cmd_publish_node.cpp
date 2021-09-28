@@ -535,8 +535,8 @@ private:
                 l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
                 l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
                 std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
-		//l_xerr -= 0.03;
-                cmd_vel.linear.x = config_.rot_kx_*l_xerr*5.0;
+								l_xerr -= 0.03;
+                cmd_vel.linear.x = config_.rot_kx_*l_xerr;
                 cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
 
                 //Saturation parts due to Zero's deadline from VESC
@@ -608,7 +608,6 @@ private:
             break;					
 
             default:
-							ROS_INFO("mode/low is not defined");
             break;
         }
 

@@ -1,4 +1,4 @@
 global_dist_boundary: 0.3
 global_angle_boundary: 0.05 #0.05
 HJ_MODE: 2  #0 Hanjeon, 1 docking postech, 2 regular move postech
-only_regular_move: false # HJ_MODE 2 + true for only driving without QR intialization
+Without_QR_move: true # HJ_MODE 2 + true for only driving without QR intialization
