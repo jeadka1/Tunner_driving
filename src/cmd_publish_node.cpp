@@ -46,14 +46,14 @@ class CmdPublishNode : public nodelet::Nodelet {
 	float obs_y_ = 10000;	
 	bool was_obs_in_aisle = false;
 	double spare_length = 0;
-    float temp_y_err_local = 0;
+  float temp_y_err_local = 0;
 	float Max_speed = 0.5;
 	unsigned int align_cnt=0;
 	// Amcl
 	float global_dist_err_ = 0;
 	float global_ang_err_ = 0;  
 	float global_x_err_ =0;  
-	float global_y_err_ =0,global_theta_=0.0,global_c_theta_=0.0;
+	float global_y_err_ =0,global_r_theta_=0.0,global_c_theta_=0.0;
 
 	float g_x_err_=0, g_y_err_=0,g_rtheta_=0, g_ctheta_ =0;
 
@@ -61,6 +61,7 @@ class CmdPublishNode : public nodelet::Nodelet {
 	float Docking_speed=0;
 
 	bool init_call = false;
+	unsigned int init_cnt=0;
 	bool once_flag = false;
 	bool RP_MODE= true;
 
@@ -68,7 +69,7 @@ class CmdPublishNode : public nodelet::Nodelet {
 	float line_start_y_ = -30; 
 	float line_end_y_ = 30;
 	float ref_y_ = 0;
-    float ref_x_ = 0;
+  float ref_x_ = 0;
 	float near_y_ = 0;
 
 	//int fid_ID=0;
@@ -137,30 +138,34 @@ private:
     //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &CmdPublishNode::areaDataCallback, this);
 
     pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
-    pub_docking_end_ = nhp.advertise<std_msgs::Empty> ("/Doclking_done", 1); // Temperary To finish with joystick
+    pub_docking_end_ = nhp.advertise<std_msgs::Int32> ("/Doclking_done", 1); // Temperary To finish with joystick
     pub_prelidar_end_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/end", 10);
 	};
 
     void joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
     {
-        std_msgs::Empty EmptyMsg2;
+        std_msgs::Int32 joy_msg_to_node;
         //Button "B" : driving mode change -->   even: auto, odd: joy control
         if (joy_msg->buttons[1] == 1)	
         {
-            std::cout<<"(push) B or O "<<std::endl;
+            std::cout<<"(push) B "<<std::endl;
             joy_driving_ = !joy_driving_;
             gmapping_go = true; //Keep TRUE
             ros::Duration(0.5).sleep();
         }
         if(joy_msg->buttons[0] == 1)	 //
         {
-            std::cout<<"(push) A or X "<<std::endl;
-						pub_docking_end_.publish(EmptyMsg2);
-		ros::Duration(0.5).sleep();
-            //system("reboot");
-            //system("rosservice call /odom_init 0.0 0.0 0.0");
-            //system("rosservice call /reset_odom");
-            //system("rosservice call /pose_update 0.0 0.0 0.0");
+            std::cout<<"(push) A "<<std::endl;
+						joy_msg_to_node.data=0;
+						pub_docking_end_.publish(joy_msg_to_node);
+						ros::Duration(0.5).sleep();
+        }
+				if(joy_msg->buttons[3] == 1)	 //
+        {
+            std::cout<<"(push) X "<<std::endl;
+						joy_msg_to_node.data=3;
+						pub_docking_end_.publish(joy_msg_to_node);
+						ros::Duration(0.5).sleep();
         }
         if(joy_driving_)
         { 
@@ -220,7 +225,7 @@ private:
 
         global_x_err_ = local_msgs->data[4];
         global_y_err_ = local_msgs->data[5];
-        global_theta_ = local_msgs->data[6];
+        global_r_theta_ = local_msgs->data[6];
         global_c_theta_ = local_msgs->data[7];
 
         g_x_err_ = local_msgs->data[8];
@@ -249,7 +254,7 @@ private:
         
         //// 2. Autonomous Driving
         geometry_msgs::Twist cmd_vel;
-        double y_err_local = ref_y_ - near_y_;
+        float y_err_local = ref_y_ - near_y_;
         // 2.1 Check Obstacles
         //std::cout<<" obs_y_ : "<<obs_y_ <<" obs_x_ : "<<obs_x_ << std::endl;
         if (config_.check_obstacles_)
@@ -334,17 +339,22 @@ private:
         int Mode_type;
         Mode_type = driving_start->data;
         //std::cout<<"Mode_type: "<<Mode_type<<std::endl;
-        if(init_call)
+        if(init_call || init_cnt !=0)
         {
-            init_call = false;
+						init_call = false;
+						init_cnt++;
             cmd_vel.linear.x = 0.0;
             cmd_vel.linear.z = 0.0;
             pub_cmd_.publish(cmd_vel);
-            ros::Duration(1).sleep();
-            system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
-            system("rosservice call /reset_odom"); //Intialize IMU
-            system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
-            ros::Duration(5).sleep();
+						if(init_cnt==10)
+						{
+							system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+		          system("rosservice call /reset_odom"); //Intialize IMU
+		          system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
+						}
+						if(init_cnt==60)
+							init_cnt =0;
+						return;
         }
         //// 1. Joystick Driving
         //if(joy_driving_ || Mode_type == MANUAL_MODE) 
@@ -352,7 +362,7 @@ private:
         
         //// 2. Autonomous Driving
 
-        double y_err_local = ref_y_ - near_y_;
+        float y_err_local = ref_y_ - near_y_;
         // 2.1 Check Obstacles
 
         if (config_.check_obstacles_)
@@ -423,16 +433,16 @@ private:
         if(config_.Postech_code_)
             Mode_type  = postech_mode_;
 
-        if(joy_driving_ || Mode_type == MANUAL_MODE)
+        if(joy_driving_ || driving_start->data == MANUAL_MODE)
             Mode_type = MANUAL_MODE;
 
-        double straight_l_xerr, straight_l_yerr;
-        double comy_yerr;
-        double l_xerr,l_yerr;
+        float straight_l_xerr, straight_l_yerr;
+        float comy_yerr;
+        float l_xerr,l_yerr;
+				//std::cout<< "goal_yaw: "<< global_r_theta_ <<", yaw: " << global_c_theta_<< std::endl;
         switch(Mode_type)
         {
             case MANUAL_MODE:
-                return;
             break;
             case STOP_MODE:
                 cmd_vel.linear.x = 0.0;
@@ -537,7 +547,7 @@ private:
                 std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
 								//l_xerr -= 0.03;
                 cmd_vel.linear.x = config_.rot_kx_*l_xerr;
-                cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_theta_ - global_c_theta_);
+                cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
 
                 //Saturation parts due to Zero's deadline from VESC
                 //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
@@ -638,16 +648,16 @@ private:
 		double Kpx_param_;
 		double Kpy_param_;
 		double Kpy_param_rot_;
-        double linear_vel_;
-        double robot_width_;
-        double obs_coefficient_;
-        double front_obs_;
-        double spare_length_;
-        double boundary_percent_;;
-        double line_width_min_;
-        double line_width_max_;
-        bool amcl_driving_;
-        bool check_obstacles_;
+    double linear_vel_;
+    double robot_width_;
+    double obs_coefficient_;
+    double front_obs_;
+    double spare_length_;
+    double boundary_percent_;;
+    double line_width_min_;
+    double line_width_max_;
+    bool amcl_driving_;
+    bool check_obstacles_;
 		
 		double rot_kx_;
 		double rot_ky_;

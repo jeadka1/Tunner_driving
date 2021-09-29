@@ -60,7 +60,7 @@ private:
 		nhp.param("Without_QR_move", config_.Without_QR_move_, false);
 
 
-		sub_joy_ = nhp.subscribe<std_msgs::Empty>("/Doclking_done", 10, &LocalizationNode::DockingCallback, this); // Temporary
+		sub_joy_ = nhp.subscribe<std_msgs::Int32>("/Doclking_done", 10, &LocalizationNode::DockingCallback, this); // Temporary
 		sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);    
 		sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::poseCallback, this);
 
@@ -75,11 +75,23 @@ private:
 		// [0]: global dist error, [1]: global angle error, [2]: arrival flag, [3]: rotating flag
 	};
 
-	void DockingCallback(const std_msgs::Empty::ConstPtr& joy_msg)
+	void DockingCallback(const std_msgs::Int32::ConstPtr& joy_msg)
 	{
-		ROS_INFO("Joy A: Behavior ++");
 		if(config_.HJ_MODE_!=0)
-			behavior_cnt++;
+		{
+			switch(joy_msg->data)
+			{
+			case 0:
+				behavior_cnt++;	
+				ROS_INFO("Joy A: Behavior ++");
+			break;
+			case 3:
+				behavior_cnt=0;
+				ROS_INFO("Joy X: Behavior 0");	
+			break;
+
+			}
+		}
 	}
 	
 	void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg)
@@ -162,9 +174,9 @@ private:
 		// 1. Calculate Global Error
 		float global_x_err = current_goal_.pose.position.x - pose_msg->pose.pose.position.x;
 		float global_y_err = current_goal_.pose.position.y - pose_msg->pose.pose.position.y;
-		double global_dist_err = sqrt(global_x_err*global_x_err + global_y_err*global_y_err);	
-		double global_ang_err;
-		double static_x_err,static_y_err;
+		float global_dist_err = sqrt(global_x_err*global_x_err + global_y_err*global_y_err);	
+		float global_ang_err;
+		float static_x_err,static_y_err;
 		std::cout << "goal (x,y): " <<"(" <<current_goal_.pose.position.x << ", " <<current_goal_.pose.position.y << ")" <<std::endl;		
 		std::cout << "curr (x,y): " <<"(" <<pose_msg->pose.pose.position.x << ", " << pose_msg->pose.pose.position.y << ")" <<std::endl;
 		std::cout << "distance :" << global_dist_err <<std::endl;
@@ -188,12 +200,12 @@ private:
 		tf2::Quaternion orientation (transform.getRotation().x(), transform.getRotation().y(), transform.getRotation().z(), transform.getRotation().w());
 		tf2::Matrix3x3 m(orientation);
 
-		double roll, pitch, yaw;
+		double roll, pitch, yaw; //double
 		m.getRPY(roll, pitch, yaw);
 		g_x_err= global_x_err;
 		g_y_err= global_y_err;
 
-		g_ctheta = yaw;
+		g_ctheta = (float) yaw;//TODO for straight control, have to change atan2
 		//check once
 
 		if (goal_index_ % goal_count_ ==0 && g_rtheta_flag==true)
@@ -629,6 +641,7 @@ private:
 
 		localization_msgs.data.push_back(line_y_pose);
 		pub_localization_.publish(localization_msgs);
+		fid_area = 0; // To reset for the fid_area. because if the ID is not detected the previous data is still in.
 	/*
 		float Data_log[7];
 		Data_log[0] = postech_mode;
@@ -679,12 +692,12 @@ private:
 	// GOAL
 	int goal_index_ = 0;
 	int goal_count_ = 0;    
-	double goal_yaw = M_PI;	
-	double static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
-	double g_x_err,g_y_err, g_rtheta,g_ctheta;
+	float goal_yaw = M_PI;	
+	float static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
+	float g_x_err,g_y_err, g_rtheta,g_ctheta;
 	int postech_mode;
 	bool arrvial_flag =true;
-  double line_y_pose = 0;
+  float line_y_pose = 0;
 
 	//Cmaera
 	int fid_ID=0;
