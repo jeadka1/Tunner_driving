@@ -40,8 +40,7 @@
     <include file="$(find robot_localization)/launch/ekf_template.launch"/>
     
     <!-- LEO_DRIVING PACKAGE-->
-    <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /mode/low std_msgs/Int32 0" output="screen"/>
-    <!--node if="$(arg use_mode)" pkg="rostopic" type="rostopic" name="decison_driving_trigger" args="pub -r 10 /mode_decision std_msgs/Bool true" output="screen"/-->
+    <node if="$(arg use_mode)" pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /mode/low std_msgs/Int32 0" output="screen"/>
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     
     <node if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
@@ -66,8 +65,8 @@
     
     <!-- STATIC TF PUBLISHER -->
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_rp" args="0 0 0 3.141592 0 0 base_link laser 100" />
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_velo" args="0.0635 0 0 0 0 0 base_link velodyne 100" />
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_imu" args="0.066 0 0 0.0 0 0 base_link imu 100" />
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_velo" args="0.0735 0 0 0 0 0 base_link velodyne 100" /> <!-- 0.0635-->
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_imu" args="0.0735 0 0 0.0 0 0 base_link imu 100" />
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="map_to_odom" args="0 0 0 0.0 0 0 map odom 100" />
 
 

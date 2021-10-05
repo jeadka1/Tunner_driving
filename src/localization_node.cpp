@@ -18,6 +18,9 @@
 #include <std_msgs/Empty.h>
 #include "std_srvs/Empty.h"
 #include <leo_driving/charging_done.h>
+#include <leo_driving/PlotMsg.h>
+
+#define STOP_MAX 30
 
 enum MODE_{
 //	MOBILE_STOP,
@@ -72,6 +75,8 @@ private:
 		pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); 
 		pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10); 
 		pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10);
+		pub_log_data_= nhp.advertise<leo_driving::PlotMsg>("/PlotMsg_data", 10);
+
 		// [0]: global dist error, [1]: global angle error, [2]: arrival flag, [3]: rotating flag
 	};
 
@@ -180,7 +185,7 @@ private:
 		std::cout << "goal (x,y): " <<"(" <<current_goal_.pose.position.x << ", " <<current_goal_.pose.position.y << ")" <<std::endl;		
 		std::cout << "curr (x,y): " <<"(" <<pose_msg->pose.pose.position.x << ", " << pose_msg->pose.pose.position.y << ")" <<std::endl;
 		std::cout << "distance :" << global_dist_err <<std::endl;
-		std::cout <<" " <<std::endl;
+		//std::cout <<" " <<std::endl;
 
 
 		tf::StampedTransform transform;
@@ -255,7 +260,7 @@ private:
 			break;
 
 		case TURN_MODE:
-			if(STOP_cnt<20)
+			if(STOP_cnt<STOP_MAX)
 			{
 				STOP_cnt++;
 				postech_mode = STOP_MODE;//moving
@@ -345,7 +350,7 @@ private:
 			break;
 
 		case 1://turn : QR or goal pose
-			if(STOP_cnt<20)
+			if(STOP_cnt<STOP_MAX)
 			{
 				STOP_cnt++;
 				postech_mode = STOP_MODE;//moving
@@ -400,7 +405,7 @@ private:
 			break;
 
 		case 3://stop -> turn : QR or goal pose
-			if(STOP_cnt<20)
+			if(STOP_cnt<STOP_MAX)
 			{
 				STOP_cnt++;
 				postech_mode = STOP_MODE;//moving
@@ -496,7 +501,7 @@ private:
 			break;
 
 		case 1://turn : QR or goal pose
-			if(STOP_cnt<20)
+			if(STOP_cnt<STOP_MAX)
 			{
 				STOP_cnt++;
 				postech_mode = STOP_MODE;//moving
@@ -535,6 +540,8 @@ private:
 				static_y_err = static_y - pose_msg->pose.pose.position.y;
 				static_t = goal_yaw;
 				static_ct = yaw;
+
+        
 			}
 
 			
@@ -551,7 +558,7 @@ private:
 			break;
 
 		case 3://stop -> turn : QR or goal pose
-			if(STOP_cnt<20)
+			if(STOP_cnt<STOP_MAX)
 			{
 				STOP_cnt++;
 				postech_mode = STOP_MODE;//moving
@@ -642,6 +649,29 @@ private:
 		localization_msgs.data.push_back(line_y_pose);
 		pub_localization_.publish(localization_msgs);
 		fid_area = 0; // To reset for the fid_area. because if the ID is not detected the previous data is still in.
+		std::cout<< "\n\n"<<std::endl;
+
+		leo_driving::PlotMsg Save_log;
+		Save_log.x = pose_msg->pose.pose.position.x;
+		Save_log.y = pose_msg->pose.pose.position.y;
+		if(postech_mode==TURN_MODE)
+		{
+			std::cout <<"static x: " << static_x_err *cos(static_ct) + static_y_err *sin(static_ct)<< ", static y: "<<  -static_x_err *sin(static_ct) + static_y_err *cos(static_ct) << std::endl;
+			Save_log.r_x = static_x;
+			Save_log.r_y = static_y;
+			Save_log.s_x = static_x_err *cos(static_ct) + static_y_err *sin(static_ct);
+			Save_log.s_y = -static_x_err *sin(static_ct) + static_y_err *cos(static_ct);
+			Save_log.rt = goal_yaw;
+			Save_log.ct = yaw;
+		}
+		else
+		{
+			Save_log.r_x = current_goal_.pose.position.x;
+			Save_log.r_y = current_goal_.pose.position.y;
+		}
+
+
+		pub_log_data_.publish(Save_log);
 	/*
 		float Data_log[7];
 		Data_log[0] = postech_mode;
@@ -682,6 +712,7 @@ private:
 	ros::Publisher pub_localization_;
 	ros::Publisher pub_robot_pose_;
 	ros::Publisher pub_QR_;
+	ros::Publisher pub_log_data_;
 	
 	bool is_rotating_ = false;
 	bool init_start_ = false;

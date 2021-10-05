@@ -27,8 +27,8 @@ add_message_files(
   DrainCoef.msg
   MissionItem.msg
   Mission.msg
-
   EnumLowMode.msg
+  PlotMsg.msg
 )
 
 ## Generate services in the 'srv' folder

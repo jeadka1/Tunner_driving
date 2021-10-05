@@ -13,8 +13,14 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
-#include <leo_driving/Mode.h>
 #include <algorithm>
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <leo_driving/Mode.h>
+
+
+using namespace message_filters;
+
 enum MODE_{
 	CHARGE_MODE, 
 	STANDBY_MODE,
@@ -30,11 +36,6 @@ enum MODE_{
 	MANUAL_MODE,
 	STOP_MODE,
 	TURN_MODE,
-};
-enum QR_DECTION{
-	QR_1,
-	QR_2,
-	QR_3,
 };
 
 namespace auto_driving {
@@ -64,6 +65,7 @@ class CmdPublishNode : public nodelet::Nodelet {
 	unsigned int init_cnt=0;
 	bool once_flag = false;
 	bool RP_MODE= true;
+	bool local_data_receive = false;
 
 	// Aisle
 	float line_start_y_ = -30; 
@@ -126,10 +128,17 @@ private:
     sub_joy_ = nhp.subscribe<sensor_msgs::Joy>("/joystick", 1, &CmdPublishNode::joyCallback, this);
     sub_obs_dists_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/obs_dists", 10, &CmdPublishNode::obsCallback, this);
     sub_aisle_ = nhp.subscribe<sensor_msgs::PointCloud2> ("/aisle_points", 10, &CmdPublishNode::aisleCallback, this);    
-    sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
 
     sub_gmapping_driving_ = nhp.subscribe<std_msgs::Bool> ("/lidar_driving", 10, &CmdPublishNode::GmappingpublishCmd, this);
+
+    sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
     sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::publishCmd, this);
+/*
+		message_filters::Subscriber<std_msgs::Float32MultiArray> sub_localization_(nhp, "localization_data", 10);
+		message_filters::Subscriber<std_msgs::Int32> sub_driving_(nhp, "/mode/low", 10);
+		TimeSynchronizer<std_msgs::Float32MultiArray, std_msgs::Int32> sync(sub_localization_, sub_driving_, 10);
+		sync.registerCallback(boost::bind(&CmdPublishNode::publishCmd,this, _1, _2));
+*/
 
 
     sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &CmdPublishNode::SpeedCallback, this);
@@ -165,6 +174,14 @@ private:
             std::cout<<"(push) X "<<std::endl;
 						joy_msg_to_node.data=3;
 						pub_docking_end_.publish(joy_msg_to_node);
+						ros::Duration(0.5).sleep();
+        }
+				if(joy_msg->buttons[3] == 4)	 //
+        {
+            std::cout<<"(push) Y "<<std::endl;
+						init_call = true;
+						//joy_msg_to_node.data=3;
+						//pub_docking_end_.publish(joy_msg_to_node);
 						ros::Duration(0.5).sleep();
         }
         if(joy_driving_)
@@ -215,6 +232,7 @@ private:
     void PoseCallback(const geometry_msgs::PoseStamped::ConstPtr& pose_msgs)
     {
     }*/
+
     void localDataCallback(const std_msgs::Float32MultiArray::ConstPtr& local_msgs)
     {
         global_dist_err_ = local_msgs->data[0]; 
@@ -236,8 +254,9 @@ private:
         init_call = local_msgs->data[12];
 
         liney_pose = local_msgs->data[13];
-
+				local_data_receive =true;
     }
+
     /*void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
     {
         fid_ID = (int) area_msgs->data[0];
@@ -332,8 +351,33 @@ private:
             pub_cmd_.publish(cmd_vel); 
         }
     }
-    void publishCmd(const std_msgs::Int32::ConstPtr &driving_start)
+/*
+    void publishCmd(const std_msgs::Float32MultiArray::ConstPtr& local_msgs, const std_msgs::Int32::ConstPtr &driving_start)
     {
+        global_dist_err_ = local_msgs->data[0]; 
+        global_ang_err_ = local_msgs->data[1];
+        //is_arrived_ = local_msgs->data[2];
+        postech_mode_ = local_msgs->data[2];
+        is_rotating_ = local_msgs->data[3];
+
+        global_x_err_ = local_msgs->data[4];
+        global_y_err_ = local_msgs->data[5];
+        global_r_theta_ = local_msgs->data[6];
+        global_c_theta_ = local_msgs->data[7];
+
+        g_x_err_ = local_msgs->data[8];
+        g_y_err_ = local_msgs->data[9];
+        g_rtheta_ = local_msgs->data[10];
+        g_ctheta_ = local_msgs->data[11];
+
+        init_call = local_msgs->data[12];
+
+        liney_pose = local_msgs->data[13];
+*/
+ //-----------------------------------------
+    void publishCmd(const std_msgs::Int32::ConstPtr &driving_start)
+		{
+
         std_msgs::Empty EmptyMsg;
         geometry_msgs::Twist cmd_vel;
         int Mode_type;
@@ -352,7 +396,7 @@ private:
 		          system("rosservice call /reset_odom"); //Intialize IMU
 		          system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
 						}
-						if(init_cnt==60)
+						if(init_cnt==80)
 							init_cnt =0;
 						return;
         }
@@ -439,7 +483,7 @@ private:
         float straight_l_xerr, straight_l_yerr;
         float comy_yerr;
         float l_xerr,l_yerr;
-				//std::cout<< "goal_yaw: "<< global_r_theta_ <<", yaw: " << global_c_theta_<< std::endl;
+
         switch(Mode_type)
         {
             case MANUAL_MODE:
@@ -540,14 +584,37 @@ private:
             break;
 
             case TURN_MODE:
+								if(local_data_receive)
+								{
+									local_data_receive =false;
 		//global_x_err_ -= 0.08*cos(global_c_theta_);
 		//global_y_err_ -= 0.08*sin(global_c_theta_);
                 l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
                 l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
-                std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
+                //std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
 								//l_xerr -= 0.03;
-                cmd_vel.linear.x = config_.rot_kx_*l_xerr;
-                cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+								if(fabs(global_c_theta_ - global_c_theta_)< 0.4 || fabs(global_c_theta_ - global_c_theta_)> 2.7)
+								{
+								cmd_vel.linear.x = config_.rot_kx_*l_xerr;
+	              cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+								}
+								else
+								{
+									cmd_vel.linear.x = 0.0;
+		              cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+								}
+/*
+								if(fabs(l_xerr)>0.05)
+								{
+									cmd_vel.linear.x = config_.rot_kx_*l_xerr;
+	                cmd_vel.angular.z = 0.0;
+								}
+								else
+								{
+		              cmd_vel.linear.x = 0.0;
+		              cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+								}
+*/
 
                 //Saturation parts due to Zero's deadline from VESC
                 //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
@@ -561,6 +628,7 @@ private:
                 else if(cmd_vel.angular.z< -config_.max_rot_)
                     cmd_vel.angular.z = -config_.max_rot_;
                 pub_cmd_.publish(cmd_vel);
+								}
             break;
 
             case AUTO_PRE_LIDAR_MODE:
@@ -620,8 +688,9 @@ private:
             default:
             break;
         }
-
-
+				//std::cout<< "static_g_x_err_: "<< global_x_err_ <<", static_g_y_err_: " << global_y_err_<< std::endl;
+				//std::cout<< "l_xerr: "<< l_xerr <<", l_yerr: " << l_yerr<< std::endl;
+				//std::cout<< "goal_yaw: "<< global_r_theta_ <<", yaw: " << global_c_theta_<< std::endl;
     }
 
 private:
