@@ -7,7 +7,7 @@
     <arg name="use_joy" default="true"/>
     <arg name="use_postech_pos" default="false"/>
     <arg name="use_static_tf" default="true"/>
-    <arg name="use_mode" default="true"/>
+    <arg name="use_mode" default="false"/> <!-- not gonna use-->
     <arg name="use_obs" default="true"/>
 
     <arg name="map_file" default="/home/cocel/catkin_ws/maps/docking_test.yaml"/> <!-- in front of computer -->
@@ -40,6 +40,7 @@
     <include file="$(find robot_localization)/launch/ekf_template.launch"/>
     
     <!-- LEO_DRIVING PACKAGE-->
+    <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /cmd_publish std_msgs/Int32 0" output="screen"/>
     <node if="$(arg use_mode)" pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /mode/low std_msgs/Int32 0" output="screen"/>
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     

@@ -77,6 +77,8 @@ class CmdPublishNode : public nodelet::Nodelet {
 	//int fid_ID=0;
 	//float fid_area=0;
 	int postech_mode_=0;
+	int HJ_mode_low=STOP_MODE;
+	unsigned int HJ_mode_cnt =0;
 
 	// 
 	bool is_rotating_ = false;
@@ -132,7 +134,8 @@ private:
     sub_gmapping_driving_ = nhp.subscribe<std_msgs::Bool> ("/lidar_driving", 10, &CmdPublishNode::GmappingpublishCmd, this);
 
     sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
-    sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::publishCmd, this);
+    sub_mode_call_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::modeCallback, this);
+    sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &CmdPublishNode::publishCmd, this);
 /*
 		message_filters::Subscriber<std_msgs::Float32MultiArray> sub_localization_(nhp, "localization_data", 10);
 		message_filters::Subscriber<std_msgs::Int32> sub_driving_(nhp, "/mode/low", 10);
@@ -375,13 +378,33 @@ private:
         liney_pose = local_msgs->data[13];
 */
  //-----------------------------------------
+	
+    void modeCallback(const std_msgs::Int32::ConstPtr &Mode_value)
+		{
+			HJ_mode_low = Mode_value->data;
+			HJ_mode_cnt =0;
+		}
     void publishCmd(const std_msgs::Int32::ConstPtr &driving_start)
 		{
 
         std_msgs::Empty EmptyMsg;
         geometry_msgs::Twist cmd_vel;
         int Mode_type;
-        Mode_type = driving_start->data;
+				HJ_mode_cnt++;
+				
+				if(config_.Postech_code_)
+            Mode_type  = postech_mode_;
+				else
+				{
+					if(HJ_mode_cnt >=10)
+						HJ_mode_low = STOP_MODE;
+					Mode_type = HJ_mode_low;
+				}		
+
+        if(joy_driving_ || driving_start->data == MANUAL_MODE)
+            Mode_type = MANUAL_MODE;
+
+
         //std::cout<<"Mode_type: "<<Mode_type<<std::endl;
         if(init_call || init_cnt !=0)
         {
@@ -409,7 +432,7 @@ private:
         float y_err_local = ref_y_ - near_y_;
         // 2.1 Check Obstacles
 
-        if (config_.check_obstacles_)
+        if (config_.check_obstacles_ && (Mode_type == AUTO_LIDAR_MODE || Mode_type == AUTO_IMAGE_MODE))
         {
             float line_length = line_end_y_ - line_start_y_;
             float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
@@ -474,11 +497,7 @@ private:
             }
 
         }
-        if(config_.Postech_code_)
-            Mode_type  = postech_mode_;
-
-        if(joy_driving_ || driving_start->data == MANUAL_MODE)
-            Mode_type = MANUAL_MODE;
+        
 
         float straight_l_xerr, straight_l_yerr;
         float comy_yerr;
@@ -701,6 +720,7 @@ private:
 	ros::Subscriber sub_localization_;
 	ros::Subscriber sub_gmapping_driving_;
 	ros::Subscriber sub_driving_;
+	ros::Subscriber sub_mode_call_;
 	//ros::Subscriber sub_area_;
 	ros::Subscriber sub_speed_;
 	//ros::Subscriber sub_integratedpose_;

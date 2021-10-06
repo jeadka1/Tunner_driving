@@ -241,9 +241,10 @@ private:
 		std_msgs::Int32 QR_msg;
 		
 		if(config_.HJ_MODE_==0){
-		switch(HJ_mode) //To decide what the mobile robot does
+		switch(HJ_mode_low) //To decide what the mobile robot does
 		{
 		case AUTO_LIDAR_MODE:
+			init_start_ = false;
 			is_rotating_ = false;
 			STOP_cnt =0;
 			postech_mode = AUTO_LIDAR_MODE;//moving
@@ -260,6 +261,7 @@ private:
 			break;
 
 		case TURN_MODE:
+			init_start_ = false;
 			if(STOP_cnt<STOP_MAX)
 			{
 				STOP_cnt++;
@@ -286,14 +288,15 @@ private:
 					global_ang_err -= 2*M_PI;
 				else if(global_ang_err < -M_PI)
 					global_ang_err += 2*M_PI;
-
 				if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
 				{
-					is_rotating_ =false;
-					STOP_cnt =0;
-					goal_index_++;
-				}
+					STOP_cnt=0;
+					behavior_cnt++;
+					postech_mode = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
 
+					is_rotating_ =false;
+					goal_index_++;				
+				}
 				static_x_err = static_x - pose_msg->pose.pose.position.x;
 				static_y_err = static_y - pose_msg->pose.pose.position.y;
 				static_t = goal_yaw;
@@ -304,6 +307,7 @@ private:
 
 		case DOCK_IN_MODE:
 			postech_mode = DOCK_IN_MODE;//moving
+			init_start_ = false;
 			is_rotating_ = false;
 			STOP_cnt =0;
 			break;
@@ -324,6 +328,7 @@ private:
 
 		case STOP_MODE:
 			postech_mode = STOP_MODE;//moving
+			init_start_ = false;
 			is_rotating_ = false;
 			STOP_cnt =0;
 			break;
@@ -331,6 +336,7 @@ private:
 
 		default :
 			is_rotating_ = false;
+			init_start_ = false;
 			STOP_cnt =0;
 			break;
 		}
@@ -739,7 +745,7 @@ private:
 	unsigned int behavior_cnt =0;
 	int behavior_decision=STOP_MODE;
 	bool Charging_done_flag =false;
-	int HJ_mode=STOP_MODE;
+	int HJ_mode_low=STOP_MODE;
 
 	unsigned int STOP_cnt =0;
 		
@@ -765,7 +771,8 @@ void LocalizationNode::areaDataCallback(const std_msgs::Float32MultiArray::Const
 }
 void LocalizationNode::DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call)
 {
-	HJ_mode = mode_call->data;
+	HJ_mode_low = mode_call->data;
+	ROS_INFO("Mode: %d",HJ_mode_low);
 }
 bool LocalizationNode::docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp)
 //bool LocalizationNode::docking_done(leo_driving::charging_done::Request& req, leo_driving::charging_done::Response& res)
