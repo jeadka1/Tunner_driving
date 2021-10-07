@@ -342,7 +342,7 @@ private:
 		}
 	}
 //----------------------------------------------- postech mode
-	else if(config_.HJ_MODE_==1){ //With docking postech mode
+	else if(config_.HJ_MODE_==1 || config_.HJ_MODE_ ==2){ //With docking postech mode
 		switch(behavior_cnt) // Behave in turn
 		{
 		case 0://moving to go turning point: start straight
@@ -446,6 +446,16 @@ private:
 
 					is_rotating_ =false;
 					STOP_cnt =0;
+					if(config_.HJ_MODE_ ==2)
+					{
+						goal_index_++;
+						//Without docking & no QR
+						if(config_.Without_QR_move_)
+						{
+							behavior_cnt=0;
+							postech_mode = STOP_MODE;
+						}
+					}
 				}
 				static_x_err = static_x - pose_msg->pose.pose.position.x;
 				static_y_err = static_y - pose_msg->pose.pose.position.y;
@@ -456,6 +466,17 @@ private:
 
 		case 4:// docking in : 
 			postech_mode = DOCK_IN_MODE;//moving
+			if(config_.Without_QR_move_ == false)
+			{
+				postech_mode = DOCK_OUT_MODE;//moving
+				if(fid_area >=5000 && fid_ID == 4)
+				{
+					behavior_cnt=0;
+					init_start_ =true;
+					postech_mode = STOP_MODE;
+					ROS_INFO("fid_area: %f", fid_area);
+				}
+			}
 			if(fid_area >=5000 && fid_ID == 3)
 			{
 				behavior_cnt++;
@@ -482,146 +503,6 @@ private:
 				postech_mode = STOP_MODE; 
 				init_start_ = true;
 				goal_index_ ++;
-			}
-			break;
-		default:
-			//behavior_cnt=0;
-			postech_mode = STOP_MODE;
-			ROS_INFO("Behavior error");
-			break;
-		}
-		ROS_INFO("Behavior count: %d, %d", behavior_cnt, behavior_decision);
-	}
-//-----------------------------------------------------------------------------------------------------
-	else if(config_.HJ_MODE_==2){ // without docking
-		switch(behavior_cnt) // Behave in turn
-		{
-		case 0://moving to go turning point: start straight
-			init_start_ = false;
-			postech_mode = AUTO_LIDAR_MODE;
-			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
-			{
-				behavior_cnt++;
-				postech_mode = STOP_MODE;
-			}
-			break;
-
-		case 1://turn : QR or goal pose
-			if(STOP_cnt<STOP_MAX)
-			{
-				STOP_cnt++;
-				postech_mode = STOP_MODE;//moving
-			}
-			else
-			{
-				postech_mode = TURN_MODE;//moving
-				if(!is_rotating_)
-				{
-					is_rotating_ =true;
-					std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-					static_x = pose_msg->pose.pose.position.x;
-					static_y = pose_msg->pose.pose.position.y;
-					goal_yaw = yaw + M_PI; // save current when start rotating
-					if(goal_yaw > M_PI)
-						goal_yaw -= 2*M_PI;
-					else if(goal_yaw < -M_PI)
-						goal_yaw += 2*M_PI;
-				}
-				global_ang_err = goal_yaw - yaw;  
-				std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
-				if(global_ang_err > M_PI)
-					global_ang_err -= 2*M_PI;
-				else if(global_ang_err < -M_PI)
-					global_ang_err += 2*M_PI;
-				if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
-				{
-					STOP_cnt=0;
-					behavior_cnt++;
-					postech_mode = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
-
-					is_rotating_ =false;
-					goal_index_++;				
-				}
-				static_x_err = static_x - pose_msg->pose.pose.position.x;
-				static_y_err = static_y - pose_msg->pose.pose.position.y;
-				static_t = goal_yaw;
-				static_ct = yaw;
-
-        
-			}
-
-			
-			break;
-
-		case 2: //moving back to home
-			postech_mode = AUTO_LIDAR_MODE;
-			
-			if(global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 2) )
-			{
-				behavior_cnt++;
-				postech_mode = STOP_MODE;
-			}
-			break;
-
-		case 3://stop -> turn : QR or goal pose
-			if(STOP_cnt<STOP_MAX)
-			{
-				STOP_cnt++;
-				postech_mode = STOP_MODE;//moving
-			}
-			else
-			{
-				postech_mode = TURN_MODE;//moving
-				if(!is_rotating_)
-				{
-					is_rotating_ =true;
-					std::cout<<"**Arrived to the goal position: "<<global_dist_err<<std::endl;
-					static_x = pose_msg->pose.pose.position.x;
-					static_y = pose_msg->pose.pose.position.y;
-					goal_yaw = yaw + M_PI; // save current when start rotating
-					if(goal_yaw > M_PI)
-						goal_yaw -= 2*M_PI;
-					else if(goal_yaw < -M_PI)
-						goal_yaw += 2*M_PI;
-				}
-				global_ang_err = goal_yaw - yaw;  
-				std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<global_ang_err<<std::endl;
-				if(global_ang_err > M_PI)
-					global_ang_err -= 2*M_PI;
-				else if(global_ang_err < -M_PI)
-					global_ang_err += 2*M_PI;
-
-				if(abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
-				{
-					STOP_cnt=0;
-					behavior_cnt++;
-					postech_mode = STOP_MODE; 
-
-					is_rotating_ =false;
-					goal_index_++;
-
-					//Without docking & no QR
-					if(config_.Without_QR_move_)
-					{
-						behavior_cnt=0;
-						postech_mode = STOP_MODE;
-					}
-					
-				}
-				static_x_err = static_x - pose_msg->pose.pose.position.x;
-				static_y_err = static_y - pose_msg->pose.pose.position.y;
-				static_t = goal_yaw;
-				static_ct = yaw;
-			}
-			break;
-		case 4://Before starting, initialize the position
-			postech_mode = AUTO_LIDAR_MODE;
-			if(fid_area >=5000 && fid_ID == 3)
-			{
-				behavior_cnt=0;
-				init_start_ =true;
-				postech_mode = STOP_MODE;
-				ROS_INFO("fid_area: %f", fid_area);
 			}
 			break;
 		default:

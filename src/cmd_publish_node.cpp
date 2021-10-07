@@ -108,7 +108,7 @@ private:
     nhp.param("front_obs", config_.front_obs_, 0.6);
     nhp.param("boundary_percent", config_.boundary_percent_, 0.02);
     nhp.param("spare_length", config_.spare_length_, 0.3);
-    nhp.param("amcl_driving", config_.amcl_driving_, false);
+    nhp.param("amcl_driving", config_.amcl_driving_, true);
     nhp.param("check_obstacles", config_.check_obstacles_, false);
     nhp.param("rot_kx", config_.rot_kx_, 0.1);
     nhp.param("rot_ky", config_.rot_ky_, 0.1);
@@ -131,7 +131,6 @@ private:
     sub_obs_dists_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/obs_dists", 10, &CmdPublishNode::obsCallback, this);
     sub_aisle_ = nhp.subscribe<sensor_msgs::PointCloud2> ("/aisle_points", 10, &CmdPublishNode::aisleCallback, this);    
 
-    sub_gmapping_driving_ = nhp.subscribe<std_msgs::Bool> ("/lidar_driving", 10, &CmdPublishNode::GmappingpublishCmd, this);
 
     sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
     sub_mode_call_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::modeCallback, this);
@@ -229,12 +228,9 @@ private:
     }
     void SpeedCallback(const std_msgs::Float32::ConstPtr& speed_msgs)
     {
-        Max_speed = speed_msgs->data;
+        config_.linear_vel_ = speed_msgs->data;
     }
-/*
-    void PoseCallback(const geometry_msgs::PoseStamped::ConstPtr& pose_msgs)
-    {
-    }*/
+
 
     void localDataCallback(const std_msgs::Float32MultiArray::ConstPtr& local_msgs)
     {
@@ -260,125 +256,9 @@ private:
 				local_data_receive =true;
     }
 
-    /*void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs)
-    {
-        fid_ID = (int) area_msgs->data[0];
-        fid_area =area_msgs->data[1];
-    }*/
-		
 
-    void GmappingpublishCmd(const std_msgs::Bool::ConstPtr &gmapping_start)
-    {
-        //if(joy_driving_ || !gmapping_go)
-        if(!gmapping_go)  
-            return;
 
-        
-        //// 2. Autonomous Driving
-        geometry_msgs::Twist cmd_vel;
-        float y_err_local = ref_y_ - near_y_;
-        // 2.1 Check Obstacles
-        //std::cout<<" obs_y_ : "<<obs_y_ <<" obs_x_ : "<<obs_x_ << std::endl;
-        if (config_.check_obstacles_)
-        {
-            float line_length = line_end_y_ - line_start_y_;
-            float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
-            float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
-            bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
-            // (0) Front Obstacle Update
-        		
 
-            if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
-            {
-                cmd_vel.linear.x = 0.0;
-                cmd_vel.linear.z = 0.0;
-                pub_cmd_.publish(cmd_vel);
-                std::cout<<"Front obstacle is deteced"<<std::endl;
-                return;
-            }
-            
-        // (1) Right Obstacle Update	(y:오른쪽이 음수)
-            else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 0.6)
-            {	
-//Start- end = length
-//robot_length = 0.5m
-//0.1 m + 0.1m
-                std::cout << "Right obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
-                //float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
-                //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
-                //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
-								y_err_local = ref_y_-config_.obs_avoidance_distance_ - near_y_;
-                temp_y_err_local = 1;
-                was_obs_in_aisle = true;
-                spare_length = 0;
-            }
-            // (2) Left Obstacle Update (y:왼쪽이 양수)
-            else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_< 0.6)
-            {
-                std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
-                //float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
-                //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
-//                y_err_local = (obs_y_+line_start_y_)/2 - near_y_;
-								y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
-                temp_y_err_local = -1;
-                was_obs_in_aisle = true;
-                spare_length = 0;
-            }
-            // (3) After obs disappear, go further 'spare_length'
-            if(!is_obs_in_aisle && was_obs_in_aisle)
-            { 
-                spare_length += config_.linear_vel_ * 0.1;
-								if(temp_y_err_local ==1)
-									y_err_local = ref_y_ - config_.obs_avoidance_distance_ - near_y_;
-								else if (temp_y_err_local == -1)
-									y_err_local = ref_y_ + config_.obs_avoidance_distance_ - near_y_;
-                std::cout<< "straight foward of spare distance" <<std::endl;
-                if(spare_length > config_.spare_length_)
-                {
-                    spare_length = 0;
-                    was_obs_in_aisle = false;
-                    std::cout<<"spare finish"<<std::endl;
-                }
-            }
-
-        }
-
-        // 2.2 Check Global Pose 
-        if(joy_driving_)
-            return;
-        else
-        {
-            cmd_vel.linear.x = config_.linear_vel_;
-            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
-            //std::cout<<"x: "<<cmd_vel.linear.x<< ", z: " << cmd_vel.angular.z<<std::endl;
-            pub_cmd_.publish(cmd_vel); 
-        }
-    }
-/*
-    void publishCmd(const std_msgs::Float32MultiArray::ConstPtr& local_msgs, const std_msgs::Int32::ConstPtr &driving_start)
-    {
-        global_dist_err_ = local_msgs->data[0]; 
-        global_ang_err_ = local_msgs->data[1];
-        //is_arrived_ = local_msgs->data[2];
-        postech_mode_ = local_msgs->data[2];
-        is_rotating_ = local_msgs->data[3];
-
-        global_x_err_ = local_msgs->data[4];
-        global_y_err_ = local_msgs->data[5];
-        global_r_theta_ = local_msgs->data[6];
-        global_c_theta_ = local_msgs->data[7];
-
-        g_x_err_ = local_msgs->data[8];
-        g_y_err_ = local_msgs->data[9];
-        g_rtheta_ = local_msgs->data[10];
-        g_ctheta_ = local_msgs->data[11];
-
-        init_call = local_msgs->data[12];
-
-        liney_pose = local_msgs->data[13];
-*/
- //-----------------------------------------
-	
     void modeCallback(const std_msgs::Int32::ConstPtr &Mode_value)
 		{
 			HJ_mode_low = Mode_value->data;
@@ -401,6 +281,13 @@ private:
 					Mode_type = HJ_mode_low;
 				}		
 
+				if(config_.amcl_driving_ ==false)
+				{
+					Mode_type = AUTO_LIDAR_MODE;
+					if(!gmapping_go)  
+            return;
+				}
+				
         if(joy_driving_ || driving_start->data == MANUAL_MODE)
             Mode_type = MANUAL_MODE;
 
@@ -423,9 +310,6 @@ private:
 							init_cnt =0;
 						return;
         }
-        //// 1. Joystick Driving
-        //if(joy_driving_ || Mode_type == MANUAL_MODE) 
-		    //return;
         
         //// 2. Autonomous Driving
 
@@ -718,7 +602,6 @@ private:
     ros::Subscriber sub_obs_dists_;
 	ros::Subscriber sub_aisle_;
 	ros::Subscriber sub_localization_;
-	ros::Subscriber sub_gmapping_driving_;
 	ros::Subscriber sub_driving_;
 	ros::Subscriber sub_mode_call_;
 	//ros::Subscriber sub_area_;
