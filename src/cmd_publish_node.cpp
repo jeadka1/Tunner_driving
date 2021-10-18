@@ -272,6 +272,7 @@ private:
         int Mode_type;
 				HJ_mode_cnt++;
 				
+				//To stop when the communication is delayed or failed
 				if(config_.Postech_code_)
             Mode_type  = postech_mode_;
 				else
@@ -280,14 +281,14 @@ private:
 						HJ_mode_low = STOP_MODE;
 					Mode_type = HJ_mode_low;
 				}		
-
+				//To operate the gmapping
 				if(config_.amcl_driving_ ==false)
 				{
 					Mode_type = AUTO_LIDAR_MODE;
 					if(!gmapping_go)  
             return;
 				}
-				
+				//To operate manual mode
         if(joy_driving_ || driving_start->data == MANUAL_MODE)
             Mode_type = MANUAL_MODE;
 
@@ -495,29 +496,25 @@ private:
                 l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
                 l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
                 //std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
-								//l_xerr -= 0.03;
-								if(fabs(global_c_theta_ - global_c_theta_)< 0.4 || fabs(global_c_theta_ - global_c_theta_)> 2.7)
+								//l_xerr -= 0.03; 
+								l_xerr = (tan(global_r_theta_)*-global_x_err_ -global_y_err_)/(sqrt(tan(global_r_theta_)*tan(global_r_theta_)+(float)1));//new l_xerr
+
+
+								cmd_vel.linear.x = config_.rot_kx_;//config_.rot_kx_*l_xerr;
+		            cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+
+								/*if(fabs(global_c_theta_ - global_c_theta_)< 0.4 || fabs(global_c_theta_ - global_c_theta_)> 2.7)
 								{
-								cmd_vel.linear.x = config_.rot_kx_*l_xerr;
-	              cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+									cmd_vel.linear.x = config_.rot_kx_*l_xerr;
+			            cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
 								}
 								else
 								{
 									cmd_vel.linear.x = 0.0;
 		              cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
 								}
-/*
-								if(fabs(l_xerr)>0.05)
-								{
-									cmd_vel.linear.x = config_.rot_kx_*l_xerr;
-	                cmd_vel.angular.z = 0.0;
-								}
-								else
-								{
-		              cmd_vel.linear.x = 0.0;
-		              cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
-								}
 */
+
 
                 //Saturation parts due to Zero's deadline from VESC
                 //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
