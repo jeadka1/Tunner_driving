@@ -142,11 +142,11 @@ private:
 			extract.setNegative (false);//false
 			extract.filter (*output_right);
 		}
-		else{
+		//else{
 		//아무것도 못찾았을 경우 어떻게할까? 
 			//std::cerr << "Not enough point for finding drain line" << std::endl;
-			return;
-		}
+		//	return;
+		//}
 
 		//fail&safe (양쪽 배수로의 평면 방정식중 , y가 0.85보다 작으면, 즉 옆을 바라보고 있지 않으면 fail
 		/*if(abs(coefficients_left->values[1]) < 0.85 || abs(coefficients_right->values[1]) < 0.85){

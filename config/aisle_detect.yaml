@@ -1,2 +1,2 @@
-line_thresh: 0.01 #0.5
+line_thresh: 0.5 #0.01
 aisle_width: 0.6

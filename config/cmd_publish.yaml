@@ -6,18 +6,18 @@ robot_width: 0.8
 obs_coefficient: 0.5
 front_obs: 0.8
 boundary_percent: 0.02
-spare_length: 0.3
+spare_length: 0.1
 #amcl_driving: false
 check_obstacles: true
 obs_avoidance_distance: 0.1
 
 rot_kx: 0.02 #0.1
-rot_ky: 0.05
+rot_ky: 0.0
 rot_kt: 1.0
 min_vel: 0.05 # The rover robotics can't move specific low speed
-min_rot: 0.4 # The rover robotics can't move specific low speed it was 1.0
+min_rot: 0.8 # PREV:0.4  The rover robotics can't move specific low speed it was 1.0
 max_vel: 0.5
-max_rot: 1.0 #
+max_rot: 1.5 #
 Kpy_param_straight: 2.0 #y compenstation for staright prev_2.0
 Postech_code: true #to operate only (true)postech or (false) hanjeon
 straight: false #1 for straight control, 2 for tunnel

@@ -63,26 +63,26 @@ private:
 		pcl::PointCloud<pcl::PointXYZ>::Ptr output_obs_selected(new pcl::PointCloud<pcl::PointXYZ>());
 
 		//Drain line detection using Velodyne
-		float h_velo = 0.40;  //0.34	//바뀌는 로봇에 따라 벨로다인 설치 높이를 측정하고, 
+		float h_velo = 0.43;  //0.34	//바뀌는 로봇에 따라 벨로다인 설치 높이를 측정하고, 
 		//point cloud에서 바닥의 z값이 어느정도 되는지를 반영, but 너무 배수로 위쪽까지 하면 모바일 로봇 주행하면서 높이 변화 생겼을 경우 배수로가 아니라 낮은 높이의 좌표를 인식해버릴수도있음
 		//그리고 배수로보다 그런 일반 지면의 값이 더 많이 나오면 평면의 방향이 아예 틀려질 수 있다.
-		float w_drain = 0.2;
-		
+		float w_drain = 0.1;
+		bool drain_exist = false;
+		float a_left,b_left,a_right,b_right = 0;
 
 		pcl::PassThrough<pcl::PointXYZ> pass;
 		pass.setInputCloud (input_ptr);         
 		pass.setFilterFieldName ("z");         
-		//pass.setFilterLimits (-(h_velo+0.3), -h_velo);    
+		pass.setFilterLimits (-(h_velo+0.3), -h_velo);    
 		//회전할때조차 아래에 이상한 포인트를 안보기 위해
 		//회전할땐 어차피 point cloud로 안하니까, 기본 주행할때는 맘껏 볼 수 있도록
-		//pass.setFilterLimits (-1, -h_velo);    
-		pass.setFilterLimits (-h_velo+0.03,-h_velo+0.09 );
+		//pass.setFilterLimits (-h_velo+0.03,-h_velo+0.09 );
 		pass.filter (*output_ptr);      
 
 		// x<2 (front)
 		pass.setInputCloud (output_ptr);         
 		pass.setFilterFieldName ("x");         
-		pass.setFilterLimits (0, 1.8); //2.0   
+		pass.setFilterLimits (0, 2.0); //1.8 //3.0 
 		//pass.setFilterLimitsNegative (false);  
 		pass.filter (*output_ptr);              
 
@@ -99,13 +99,37 @@ private:
 		pass.setFilterLimits (-1.0, 0);    
 		//pass.setFilterLimitsNegative (false);  
 		pass.filter (*output_right);      		
-
+		
+		
+		*output = *output_left + *output_right;
 		//RANSAC -이상치제거
 		pcl::ModelCoefficients::Ptr coefficients_left (new pcl::ModelCoefficients ());
 		pcl::ModelCoefficients::Ptr coefficients_right (new pcl::ModelCoefficients ());
 
 		if(output_left->size() > 10 && output_right->size() > 10 ){
 			
+			//just line equation using 2 points(y = ax +b)
+			//for left
+			float x0,x1,y0,y1 = 0;			
+			x0=output_left->points[1].x;
+			x1=output_left->points[output_left->points.size()-2].x;
+			y0=output_left->points[1].y;
+			y1=output_left->points[output_left->points.size()-2].y;
+			a_left = (y0-y1)/(x0-x1);
+			b_left = (x0*y1-x1*y0)/(x0-x1);
+			//for right
+			x0=output_right->points[1].x;
+			x1=output_right->points[output_right->points.size()-2].x;
+			y0=output_right->points[1].y;
+			y1=output_right->points[output_right->points.size()-2].y;
+			a_right = (y0-y1)/(x0-x1);
+			b_right = (x0*y1-x1*y0)/(x0-x1);
+			
+			if(abs(a_left-a_right)<0.1){ //0.1?
+				drain_exist = true;
+			}
+
+/*
 			//left
 			pcl::PointIndices::Ptr inliers (new pcl::PointIndices ());
 										
@@ -141,11 +165,23 @@ private:
 			extract.setIndices (inliers);
 			extract.setNegative (false);//false
 			extract.filter (*output_right);
-		}
-		else{
-		//아무것도 못찾았을 경우 어떻게할까? 
-			//std::cerr << "Not enough point for finding drain line" << std::endl;
-			return;
+			//추정된 평면 파라미터 출력 (eg. ax + by + cz + d = 0 ).
+		  	std::cerr << "Model coefficients_left: " << coefficients_left->values[0] << " " 
+				                          << coefficients_left->values[1] << " "
+				                          << coefficients_left->values[2] << " " 
+				                          << coefficients_left->values[3] << std::endl;
+
+		  	std::cerr << "Model coefficients_right: " << coefficients_right->values[0] << " " 
+				                          << coefficients_right->values[1] << " "
+				                          << coefficients_right->values[2] << " " 
+				                          << coefficients_right->values[3] << std::endl;
+			//ax+by+cz+d = 0 , 'c' should be smaller than 0.1 		
+			if(abs(coefficients_left->values[2]) < 0.1 || abs(coefficients_right->values[2]) < 0.1)	{
+		  		std::cerr << "==========Drain exist==========" << std::endl;
+				*output = *output_left + *output_right;
+				drain_exist = true;
+			}
+*/
 		}
 
 		//fail&safe (양쪽 배수로의 평면 방정식중 , y가 0.85보다 작으면, 즉 옆을 바라보고 있지 않으면 fail
@@ -155,17 +191,8 @@ private:
 		}*/
 
 
-		//추정된 평면 파라미터 출력 (eg. ax + by + cz + d = 0 ).
-	  	/*std::cerr << "Model coefficients_left: " << coefficients_left->values[0] << " " 
-		                                  << coefficients_left->values[1] << " "
-		                                  << coefficients_left->values[2] << " " 
-		                                  << coefficients_left->values[3] << std::endl;
-
-	  	std::cerr << "Model coefficients_right: " << coefficients_right->values[0] << " " 
-		                                  << coefficients_right->values[1] << " "
-		                                  << coefficients_right->values[2] << " " 
-		                                  << coefficients_right->values[3] << std::endl;
-		left_angle  = atan(-coefficients_left->values[0] / coefficients_left->values[1]) *180/3.141592;
+		
+		/*left_angle  = atan(-coefficients_left->values[0] / coefficients_left->values[1]) *180/3.141592;
 		right_angle  = atan(-coefficients_right->values[0] / coefficients_right->values[1]) *180/3.141592;
 		
 		//제자리 회전 이후 양쪽 angle중 (둘 중 하나라도/둘 다) 특정각(ex-4도) 이하일 때 출발하도록
@@ -184,8 +211,7 @@ private:
 		std::cerr << "right line distance : " << right_distance <<std::endl;
 		std::cerr << "differnece btw lines : " << left_distance +right_distance <<std::endl;
 */
-		//drain	line		
-		*output = *output_left + *output_right;
+
 
 
 		//OBSTACLE DETECTION
@@ -201,7 +227,7 @@ private:
 		// x<2 (front)
 		pass.setInputCloud (output_obs);         
 		pass.setFilterFieldName ("x");         
-		pass.setFilterLimits (0.5, 2.0);    
+		pass.setFilterLimits (0.5, 1.5);    
 		//pass.setFilterLimitsNegative (false);  
 		pass.filter (*output_obs);  
 		
@@ -210,19 +236,24 @@ private:
 		pass.setFilterFieldName ("y");         
 		pass.setFilterLimits (-0.3, 0.3);    
 		//pass.setFilterLimitsNegative (false);  
-		pass.filter (*output_obs_selected);  
+		pass.filter (*output_obs);  
 
-		/*float temp_x,temp_y;
-		int temp_count = 0;
-		for(int i = 0; i < output_obs->points.size(); ++i){
-			temp_x = output_obs->points[i].x;
-			temp_y = output_obs->points[i].y;
-			if(coefficients_left->values[0]*temp_x + coefficients_left->values[1]*temp_y + coefficients_left->values[3] -w_drain >0 
-			&& coefficients_right->values[0]*temp_x + coefficients_right->values[1]*temp_y + coefficients_right->values[3] +w_drain <0)
-			{ 
-				output_obs_selected->push_back(output_obs->points[i]);
+		if(drain_exist == false){
+			*output_obs_selected = *output_obs;
+		}
+		else{
+			float temp_x,temp_y;
+			int temp_count = 0;
+			for(int i = 0; i < output_obs->points.size(); ++i){
+				temp_x = output_obs->points[i].x;
+				temp_y = output_obs->points[i].y;
+				if(temp_y<a_left*temp_x+b_left-w_drain && temp_y > a_right*temp_x+b_right +w_drain)
+				{ 
+					
+					output_obs_selected->push_back(output_obs->points[i]);
+				}
 			}
-		}*/
+		}
 
 
 	if(output_obs_selected->size() != 0)

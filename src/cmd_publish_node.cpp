@@ -48,6 +48,7 @@ class CmdPublishNode : public nodelet::Nodelet {
 	bool was_obs_in_aisle = false;
 	double spare_length = 0;
   float temp_y_err_local = 0;
+	float pre_y_err = 0.0;
 	float Max_speed = 0.5;
 	unsigned int align_cnt=0;
 	// Amcl
@@ -134,7 +135,7 @@ private:
 
     sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
     sub_mode_call_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::modeCallback, this);
-    sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &CmdPublishNode::publishCmd, this);
+    sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 20, &CmdPublishNode::publishCmd, this);
 /*
 		message_filters::Subscriber<std_msgs::Float32MultiArray> sub_localization_(nhp, "localization_data", 10);
 		message_filters::Subscriber<std_msgs::Int32> sub_driving_(nhp, "/mode/low", 10);
@@ -234,6 +235,7 @@ private:
 
     void localDataCallback(const std_msgs::Float32MultiArray::ConstPtr& local_msgs)
     {
+/*
         global_dist_err_ = local_msgs->data[0]; 
         global_ang_err_ = local_msgs->data[1];
         //is_arrived_ = local_msgs->data[2];
@@ -252,7 +254,21 @@ private:
 
         init_call = local_msgs->data[12];
 
-        liney_pose = local_msgs->data[13];
+        liney_pose = local_msgs->data[13];*/
+        postech_mode_ = local_msgs->data[0];
+
+        global_x_err_ = local_msgs->data[1];
+        global_y_err_ = local_msgs->data[2];
+        global_r_theta_ = local_msgs->data[3];
+        global_c_theta_ = local_msgs->data[4];
+
+        g_x_err_ = local_msgs->data[5];
+        g_y_err_ = local_msgs->data[6];
+        g_rtheta_ = local_msgs->data[7];
+        g_ctheta_ = local_msgs->data[8];
+
+        init_call = local_msgs->data[9];
+
 				local_data_receive =true;
     }
 
@@ -327,7 +343,7 @@ private:
         		
 						//std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
 /*
-            if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 && !is_rotating_)
+            if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 )
             {
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.linear.z = 0.0;
@@ -464,8 +480,10 @@ private:
                 else // tunnel AMCL test
                 {
                 //cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
+										
                     cmd_vel.linear.x = config_.linear_vel_;
-                    cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+                    cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10; 
+										pre_y_err = y_err_local;
 
                     //Saturation parts due to Zero's deadline from VESC
                     if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
@@ -537,15 +555,15 @@ private:
                 cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
                 if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
                     cmd_vel.angular.z = config_.min_rot_;
-                else if(cmd_vel.angular.z> config_.max_rot_)
-                    cmd_vel.angular.z = config_.max_rot_;
-                if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
+                else if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
                     cmd_vel.angular.z = -config_.min_rot_;
+                if(cmd_vel.angular.z> config_.max_rot_)
+                    cmd_vel.angular.z = config_.max_rot_;
                 else if(cmd_vel.angular.z< -config_.max_rot_)
                     cmd_vel.angular.z = -config_.max_rot_;
 
                 pub_cmd_.publish(cmd_vel);
-                if(y_err_local < 0.05 || align_cnt >=70 )//0.05 cm
+                if(y_err_local < 0.02 || align_cnt >=70 )//0.05 cm
                 {
                     align_cnt=0;
                     pub_prelidar_end_.publish(EmptyMsg);
