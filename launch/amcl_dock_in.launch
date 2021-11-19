@@ -22,7 +22,7 @@
     <!-- aruco-->
     <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
     <include file="$(find aruco_detect)/launch/aruco_detect.launch"/>
-
+    <include file="$(find realsense2_camera)/launch/rs_rear_camera.launch"/>
 
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/>
 

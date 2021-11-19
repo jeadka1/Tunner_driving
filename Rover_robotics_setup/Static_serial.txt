@@ -5,3 +5,5 @@ $ gedit /etc/udev/rules.d/99-usb-serial.rules
 KERNEL=="ttyACM*", ATTRS{idVendor}=="6472", SYMLINK+="sensor_0"
 
 $ sudo udevadm control --reload-rules && sudo udevadm trigger
+
+

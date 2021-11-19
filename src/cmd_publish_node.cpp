@@ -172,14 +172,14 @@ private:
 						pub_docking_end_.publish(joy_msg_to_node);
 						ros::Duration(0.5).sleep();
         }
-				if(joy_msg->buttons[3] == 1)	 //
+	/*			if(joy_msg->buttons[3] == 1)	 //
         {
             std::cout<<"(push) X "<<std::endl;
 						joy_msg_to_node.data=3;
 						pub_docking_end_.publish(joy_msg_to_node);
 						ros::Duration(0.5).sleep();
-        }
-				if(joy_msg->buttons[3] == 4)	 //
+        }*/
+                                if(joy_msg->buttons[3] == 4)	 //
         {
             std::cout<<"(push) Y "<<std::endl;
 						init_call = true;
@@ -571,8 +571,8 @@ private:
             break;
 
             case DOCK_IN_MODE: //Hanjeon gives us the err of y
-                cmd_vel.linear.x = -0.1;
-                cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
+                //cmd_vel.linear.x = -0.1;
+                //cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local; 
 
                 if(cmd_vel.linear.x> config_.max_vel_)
                     cmd_vel.linear.x = config_.max_vel_;
@@ -584,7 +584,7 @@ private:
                 else if(cmd_vel.angular.z< -config_.max_rot_)
                     cmd_vel.angular.z = -config_.max_rot_;
 
-                pub_cmd_.publish(cmd_vel);
+                //pub_cmd_.publish(cmd_vel);
             break;
             case DOCK_OUT_MODE: // with RPlidar
                 cmd_vel.linear.x = 0.1;
