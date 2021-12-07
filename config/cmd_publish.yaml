@@ -17,7 +17,7 @@ rot_kt: 1.0
 min_vel: 0.05 # The rover robotics can't move specific low speed
 min_rot: 0.8 # PREV:0.4  The rover robotics can't move specific low speed it was 1.0
 max_vel: 0.5
-max_rot: 1.5 #
+max_rot: 1.8 #
 Postech_code: true #to operate only (true)postech or (false) hanjeon
 
 
