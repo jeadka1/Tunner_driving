@@ -87,7 +87,8 @@ class CmdPublishNode : public nodelet::Nodelet {
 	//bool is_linetracking = false;
 	bool gmapping_go =false;
 
-
+        unsigned int switch_flag0 = true;
+        unsigned int switch_flag1 = true;
 
 public:
 	CmdPublishNode() = default;
@@ -158,34 +159,84 @@ private:
     {
         std_msgs::Int32 joy_msg_to_node;
         //Button "B" : driving mode change -->   even: auto, odd: joy control
+        /*
         if (joy_msg->buttons[1] == 1)	
         {
             std::cout<<"(push) B "<<std::endl;
             joy_driving_ = !joy_driving_;
             gmapping_go = true; //Keep TRUE
+            if(joy_driving_==true)
+            {
+                joy_msg_to_node.data=1;
+                pub_docking_end_.publish(joy_msg_to_node);
+            }
+            else if(joy_driving_==false)
+            {
+                joy_msg_to_node.data=10;
+                pub_docking_end_.publish(joy_msg_to_node);
+            }
             ros::Duration(0.5).sleep();
         }
         if(joy_msg->buttons[0] == 1)	 //
         {
             std::cout<<"(push) A "<<std::endl;
-						joy_msg_to_node.data=0;
-						pub_docking_end_.publish(joy_msg_to_node);
-						ros::Duration(0.5).sleep();
+            joy_msg_to_node.data=0;
+            pub_docking_end_.publish(joy_msg_to_node);
+            ros::Duration(0.5).sleep();
         }
-	/*			if(joy_msg->buttons[3] == 1)	 //
+        */
+//B
+        if (joy_msg->buttons[1] == 1 && switch_flag1 ==0)
+        {
+            switch_flag1 = 1;
+            std::cout<<"(push) B "<<std::endl;
+            joy_driving_ = !joy_driving_;
+            gmapping_go = true; //Keep TRUE
+
+            if(joy_driving_==true)
+            {
+                ROS_INFO("Joystick mode");
+                joy_msg_to_node.data=1;
+                pub_docking_end_.publish(joy_msg_to_node);
+            }
+            else if(joy_driving_==false)
+            {
+                joy_msg_to_node.data=10;
+                pub_docking_end_.publish(joy_msg_to_node);
+            }
+        }
+        else if(joy_msg->buttons[1] == 0 && switch_flag1 ==1)
+        {
+            switch_flag1 =0;
+        }
+//A
+        if (joy_msg->buttons[0] == 1 && switch_flag0 ==0)
+        {
+            switch_flag0 = 1;
+            std::cout<<"(push) A "<<std::endl;
+
+            joy_msg_to_node.data=0;
+            pub_docking_end_.publish(joy_msg_to_node);
+        }
+        else if(joy_msg->buttons[0] == 0 && switch_flag0 ==1)
+        {
+            switch_flag0 =0;
+        }
+        /*
+        if(joy_msg->buttons[3] == 1)	 //
         {
             std::cout<<"(push) X "<<std::endl;
-						joy_msg_to_node.data=3;
-						pub_docking_end_.publish(joy_msg_to_node);
-						ros::Duration(0.5).sleep();
+            joy_msg_to_node.data=3;
+            pub_docking_end_.publish(joy_msg_to_node);
+            ros::Duration(0.5).sleep();
         }*/
-                                if(joy_msg->buttons[3] == 4)	 //
+        if(joy_msg->buttons[3] == 4)	 //
         {
             std::cout<<"(push) Y "<<std::endl;
-						init_call = true;
-						//joy_msg_to_node.data=3;
-						//pub_docking_end_.publish(joy_msg_to_node);
-						ros::Duration(0.5).sleep();
+            init_call = true;
+            //joy_msg_to_node.data=3;
+            //pub_docking_end_.publish(joy_msg_to_node);
+            ros::Duration(0.5).sleep();
         }
         if(joy_driving_)
         { 

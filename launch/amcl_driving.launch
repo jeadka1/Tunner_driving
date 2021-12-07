@@ -47,6 +47,7 @@
 
 <node pkg="nodelet" type="nodelet" name="Localization_loader" args="load auto_driving/LocalizationNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/localization.yaml"/>
+	<remap from="/joystick" to="/joy"/>
     </node>
 
     

@@ -35,8 +35,8 @@ lasamplerange: 0.005
 lasamplestep: 0.005
 
 # Other parameters
-linearUpdate: 0.1
-angularUpdate: 0.3 #0.5  
+linearUpdate: 0.1 #0.1 
+angularUpdate: 0.3 #0.3  
 temporalUpdate: -1.0
 resampleThreshold: 0.3
 particles: 80

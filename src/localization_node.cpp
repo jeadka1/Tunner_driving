@@ -17,6 +17,7 @@
 #include <std_msgs/Int32.h>
 #include <std_msgs/Empty.h>
 #include "std_srvs/Empty.h"
+#include <nav_msgs/MapMetaData.h>
 #include <leo_driving/charging_done.h>
 #include <leo_driving/PlotMsg.h>
 
@@ -67,7 +68,10 @@ private:
 		nhp.param("Main_goal_y", config_.Main_goal_y_, 0.0);
 
 
-		sub_joy_ = nhp.subscribe<std_msgs::Int32>("/Doclking_done", 10, &LocalizationNode::DockingCallback, this); // Temporary
+                sub_joy_ = nhp.subscribe<std_msgs::Int32>("/Doclking_done", 10, &LocalizationNode::DockingCallback, this); // Temporary
+
+                //sub_joy_ = nhp.subscribe<sensor_msgs::Joy>("/joystick", 1, &LocalizationNode::DockingCallback, this); // Temporary
+                sub_gmapping= nhp.subscribe<nav_msgs::MapMetaData>("/map_metadata", 1, &LocalizationNode::set_odom, this);
 		sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);    
 		sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);
 		sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
@@ -87,32 +91,77 @@ private:
 		pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10); 
 		pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10);
 		pub_log_data_= nhp.advertise<leo_driving::PlotMsg>("/PlotMsg_data", 10);
+                pub_mode_call_= nhp.advertise<std_msgs::Int32>("/mode/low", 10);
 
 
 
 		// [0]: global dist error, [1]: global angle error, [2]: arrival flag, [3]: rotating flag
 	};
 
-	void DockingCallback(const std_msgs::Int32::ConstPtr& joy_msg)
-	{
-		if(config_.HJ_MODE_!=0)
-		{
-			switch(joy_msg->data)
-			{
-			case 0:
-                                //behavior_cnt++;
-                                Next_step = true;
-				ROS_INFO("Joy A: Behavior ++");
-			break;
-			case 3:
-				behavior_cnt=0;
-				ROS_INFO("Joy X: Behavior 0");	
-			break;
 
-			}
-		}
-	}
-	
+        void DockingCallback(const std_msgs::Int32::ConstPtr& joy_msg)
+        {
+            if(config_.HJ_MODE_!=0)
+            {
+                    switch(joy_msg->data)
+                    {
+                    case 0:
+                            //behavior_cnt++;
+                            Next_step = true;
+                            ROS_INFO("Joy A: Behavior ++");
+                    break;
+                    case 1:
+                            Joy_mode=true;
+                        break;
+                    case 10:
+                            Joy_mode=false;
+                        break;
+                    case 3:
+                            behavior_cnt=0;
+                            ROS_INFO("Joy X: Behavior 0");
+                    break;
+
+                    }
+            }
+        }
+        /*
+        void DockingCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
+        {
+            if(joy_msg->buttons[0]==1 && switch_flag0==0)// A
+            {
+                switch_flag0= 1;
+                Next_step =true;
+                ROS_INFO("Joy A: Behavior ++");
+            }
+            else if(joy_msg->buttons[0]==0 && switch_flag0==1)
+            {
+                switch_flag0=0;
+            }
+
+            if(joy_msg->buttons[1]==1 && switch_flag1==0)//B
+            {
+                switch_flag1= 1;
+                Joy_mode= !Joy_mode;
+                ROS_INFO("Joy A: Behavior ++");
+            }
+            else if(joy_msg->buttons[1]==0 && switch_flag1==1)
+            {
+                switch_flag1=0;
+            }
+        }*/
+        void set_odom(const nav_msgs::MapMetaData::ConstPtr& map_msg)
+        {
+            float data_plot;
+
+            odom_update_cnt++;
+            if(odom_update_cnt==5)
+            {
+                odom_update_cnt=0;
+                data_plot = map_msg->origin.position.x;
+                std::cout<< "----------------------data: " <<data_plot <<std::endl;
+            }
+
+        }
 	void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg)
 	{
 		//geometry_msgs::PoseStamped print_point;
@@ -131,9 +180,20 @@ private:
 	}
   void poseCallback(const std_msgs::Int32::ConstPtr &empty_pose_msg)
 	{
+            if(FIRST_START_FLAG==true)
+            {
+                FIRST_START_FLAG=false;
+                if(config_.HJ_MODE_==1)
+                    behavior_cnt =6;
+                else
+                    behavior_cnt =0;
+
+            }
+
 
 		geometry_msgs::PoseWithCovarianceStamped pose_msg;
 		pose_msg = current_pose;
+                std_msgs::Int32 mode_dockin;
 		std_msgs::Float32MultiArray localization_msgs;
 		localization_msgs.data.clear();
 		
@@ -189,10 +249,10 @@ private:
 			//ROS_INFO_ONCE("Goal 1 is set: %f, %f", save_goal[0].pose.position.x,save_goal[0].pose.position.y);
 			//ROS_INFO_ONCE("Goal 2 is set: %f, %f", save_goal[1].pose.position.x,save_goal[1].pose.position.y);
 			if(behavior_cnt==0)
-				current_goal_= save_goal[0];
+                                current_goal_= save_goal[0];
 			else if(behavior_cnt ==2)
-				current_goal_ = save_goal[1];
-			current_goal_ = save_goal[goal_index_ % goal_count_];
+                                current_goal_ = save_goal[1];
+                        //current_goal_ = save_goal[goal_index_ % goal_count_];
 		}
 
 		
@@ -470,9 +530,20 @@ private:
 
 		case 4:// docking in : 
 			postech_mode = DOCK_IN_MODE;//moving
-
+                        if(Joy_mode==false)
+                        {
+                            mode_dockin.data = 4;
+                            pub_mode_call_.publish(mode_dockin);
+                        }
+                        else if(Joy_mode==true)
+                        {
+                            mode_dockin.data = 0;
+                            pub_mode_call_.publish(mode_dockin);
+                        }
                         if(Next_step||fid_area >=5000 && fid_ID == 3)
                         {
+                            mode_dockin.data = 0;
+                            pub_mode_call_.publish(mode_dockin);
                             Next_step =false;
 				behavior_cnt++;
 				postech_mode = STOP_MODE; 
@@ -1401,6 +1472,7 @@ private:
 	ros::Subscriber sub_pose_;
 	ros::Subscriber sub_pose_driving_;
 	ros::Subscriber sub_goal_;
+        ros::Subscriber sub_gmapping;
 	ros::Subscriber sub_area_;
 	ros::Subscriber sub_mode_;
 	ros::Subscriber sub_QRinit_;
@@ -1412,14 +1484,15 @@ private:
 	ros::Publisher pub_robot_pose_;
 	ros::Publisher pub_QR_;
 	ros::Publisher pub_log_data_;
+        ros::Publisher pub_mode_call_;
 	
 	bool is_rotating_ = false;
 	bool init_start_ = false;
   bool g_rtheta_flag =true;
-	bool FIRST_START_FLAG =true;
+        bool FIRST_START_FLAG =true;
 	bool new_goal_flag =false;
 
-
+        bool Joy_mode= false;
 	// GOAL
 	unsigned int start_wait=0;
 	int goal_index_ = 0;
@@ -1430,20 +1503,23 @@ private:
 	int postech_mode;
 	bool arrvial_flag =true;
   float line_y_pose = 0;
-
+        unsigned int odom_update_cnt=0;
 	//Cmaera
 	int fid_ID=0;
 	float fid_area=0;
 	bool turn_mode_start = false;
 
 	//Decision
-	unsigned int behavior_cnt =0;
+        unsigned int behavior_cnt =6;
 	int behavior_decision=STOP_MODE;
 	bool Charging_done_flag =false;
 	int HJ_mode_low=STOP_MODE;
         bool Next_step =false;
 
 	unsigned int STOP_cnt =0;
+
+        unsigned int switch_flag0 =0;
+        unsigned int switch_flag1 =0;
 		
 	std::vector<geometry_msgs::PoseStamped> goal_set_;
 	geometry_msgs::PoseStamped current_goal_;
