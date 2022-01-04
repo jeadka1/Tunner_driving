@@ -18,16 +18,14 @@
 #include <std_msgs/Empty.h>
 #include "std_srvs/Empty.h"
 #include <nav_msgs/MapMetaData.h>
+#include "nav_msgs/Odometry.h"
+#include "time.h"
 #include <leo_driving/charging_done.h>
 #include <leo_driving/PlotMsg.h>
 
 #define STOP_MAX 30
 
 enum MODE_{
-    //	MOBILE_STOP,
-    //MOBILE_MOVING,
-    //MOBILE_ROTATING,
-    //MOBILE_ALIGN,
     CHARGE_MODE,
     STANDBY_MODE,
     DOCKING_MODE,
@@ -52,6 +50,8 @@ class LocalizationNode : public nodelet::Nodelet {
 public:
     LocalizationNode() = default;
 
+
+
 private:
     virtual void onInit() {
         ros::NodeHandle nh = getNodeHandle();
@@ -71,29 +71,38 @@ private:
         sub_joy_ = nhp.subscribe<std_msgs::Int32>("/joy_from_cmd", 10, &LocalizationNode::DockingCallback, this); // Joystick data from cmd_node
 
 
-        sub_gmapping= nhp.subscribe<nav_msgs::MapMetaData>("/map_metadata", 1, &LocalizationNode::set_odom, this); //Mapping position data when mapping
+
         sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);//Clicked point from RVIZ
         sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
         sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
-//	sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
+        //	sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
 
         sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);
         sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
 
         sub_QRinit_ = nhp.subscribe("/QR_TEST", 1, &LocalizationNode::QRtestCallback, this); //While HJ_mode==1 or 2, the mode is changed to another HJ_mode ==2 or 1
+        sub_odom_ = nhp.subscribe("/odom", 1, &LocalizationNode::OdomCallback, this);
+
         sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
 
         sub_mode_decision_ = nhp.subscribe<std_msgs::Int32>("/Mode_Decision", 1, &LocalizationNode::ModedecisionCallback, this);//To jump behavior_cnd
 
+
+
         //sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this); //Docking done from robot-station
+
+        //pcw for QR local
+
+        pub_for_test_QR_local = nhp.advertise<geometry_msgs::Point>("QR_local_pose", 10); //To communicate with cmd_node
+        //
 
         pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); //To communicate with cmd_node
         pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10);//To send to robot-station or Hanjeon
         pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10); //To send to robot-station or Hanjeon
         pub_log_data_= nhp.advertise<leo_driving::PlotMsg>("/PlotMsg_data", 10); //To save the data to plot
         pub_mode_call_= nhp.advertise<std_msgs::Int32>("/mode/low", 10); //To use Dock in wiht Hanjeon
-
-    };
+        \
+    }
 
 
     void DockingCallback(const std_msgs::Int32::ConstPtr& joy_msg)
@@ -121,19 +130,9 @@ private:
             }
         }
     }
-    void set_odom(const nav_msgs::MapMetaData::ConstPtr& map_msg)
-    {
-        float data_plot;
 
-        odom_update_cnt++;
-        if(odom_update_cnt==5)
-        {
-            odom_update_cnt=0;
-            data_plot = map_msg->origin.position.x;
-            std::cout<< "----------------------data: " <<data_plot <<std::endl;
-        }
 
-    }
+
     void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg)
     {
         ROS_INFO("%d th goal is set", goal_count_);
@@ -147,6 +146,8 @@ private:
     {
         pub_robot_pose_.publish(amcl_pose_msg);
         current_pose = *amcl_pose_msg;
+        //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+
 
     }
     void poseCallback(const std_msgs::Int32::ConstPtr &empty_pose_msg)
@@ -190,12 +191,12 @@ private:
         {
             ROS_INFO_ONCE("Goal is set");
             goal_count_ =2;
-            if(behavior_cnt==0)
+            if(behavior_cnt==2)
             {
                 current_goal_.pose.position.x = config_.Main_start_x_;
                 current_goal_.pose.position.y = config_.Main_start_y_;
             }
-            else if(behavior_cnt ==2)
+            else if(behavior_cnt ==0)
             {
                 if(new_goal_flag)
                 {
@@ -220,6 +221,7 @@ private:
         std::cout << "goal (x,y): " <<"(" <<current_goal_.pose.position.x << ", " <<current_goal_.pose.position.y << ")" <<std::endl;
         std::cout << "curr (x,y): " <<"(" <<pose_msg.pose.pose.position.x << ", " << pose_msg.pose.pose.position.y << ")" <<std::endl;
         std::cout << "distance :" << global_dist_err <<std::endl;
+
         //std::cout <<" " <<std::endl;
 
 
@@ -259,7 +261,8 @@ private:
             g_rtheta = atan2(global_y_err , global_x_err);
         }
         line_y_pose = -pose_msg.pose.pose.position.x *sin(g_rtheta) + pose_msg.pose.pose.position.y *cos(g_rtheta); //rtheta_global theta rotation matrix
-
+        //std::cout<<"position amcl: "<< pose_msg.pose.pose.position.x<< ", "<<pose_msg.pose.pose.position.y <<", " << yaw<<std::endl;
+        //std::cout<<"position test: "<< pose_msg.pose.pose.position.x<< ", "<<pose_msg.pose.pose.position.y <<", " << asin(pose_msg.pose.pose.orientation.z)*2<<std::endl;
         //----------------------------------------------- current // is_rotating is essential
         //HJ_mode
 
@@ -373,6 +376,7 @@ private:
             case 0://moving to go turning point: start straight
                 init_start_ = false;
                 postech_mode = AUTO_LIDAR_MODE;
+                mobile_direction =1;
                 if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
                 {
                     Next_step=false;
@@ -417,7 +421,7 @@ private:
                         postech_mode = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
 
                         is_rotating_ =false;
-//                        goal_index_++;
+                        //                        goal_index_++;
                         STOP_cnt=0;
                     }
                     static_x_err = static_x - pose_msg.pose.pose.position.x;
@@ -429,7 +433,7 @@ private:
 
             case 2: //moving back to home
                 postech_mode = AUTO_LIDAR_MODE;
-
+                mobile_direction  = -1;
                 if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 2) )
                 {
                     Next_step=false;
@@ -520,13 +524,33 @@ private:
 
             case 6://dokcing_out : rostopic pub ending_charging
                 postech_mode = DOCK_OUT_MODE;//moving
+
+                camera_on_cnt++;
+                if(camera_on_cnt>20)
+                {
+                    if(Joy_mode==false)
+                    {
+                        mode_dockin.data = 5;
+                        pub_mode_call_.publish(mode_dockin);
+                    }
+                    else if(Joy_mode==true) //To stop dock in node
+                    {
+                        mode_dockin.data = 0;
+                        pub_mode_call_.publish(mode_dockin);
+                    }
+                }
+
                 if(Next_step||fid_area >=5000 && fid_ID == 4)// To use AMCL pose probably
                 {
+                    mode_dockin.data = 0;
+                    pub_mode_call_.publish(mode_dockin);//To stop dock in.
                     Next_step=false;
                     behavior_cnt=0;
                     postech_mode = STOP_MODE;
                     init_start_ = true;
+                    tunnel_pose = 0;
                     //goal_index_ ++;
+                    camera_on_cnt=0;
                 }
                 break;
             default:
@@ -831,10 +855,10 @@ private:
         float send_x, send_y, send_ref_yaw, send_yaw;
         if(postech_mode ==TURN_MODE)
         {
-                send_x = static_x_err;
-                send_y = static_y_err;
-                send_ref_yaw = static_t;
-                send_yaw = static_ct;
+            send_x = static_x_err;
+            send_y = static_y_err;
+            send_ref_yaw = static_t;
+            send_yaw = static_ct;
         }
         else
         {
@@ -856,38 +880,46 @@ private:
         pub_localization_.publish(localization_msgs);
         fid_area = 0; // To reset for the fid_area. because if the ID is not detected the previous data is still in.
         std::cout<< "\n\n"<<std::endl;
-/*
+
         leo_driving::PlotMsg Save_log;
         Save_log.x = pose_msg.pose.pose.position.x;
         Save_log.y = pose_msg.pose.pose.position.y;
         if(postech_mode==TURN_MODE)
         {
-                std::cout <<"static x: " << static_x_err *cos(static_ct) + static_y_err *sin(static_ct)<< ", static y: "<<  -static_x_err *sin(static_ct) + static_y_err *cos(static_ct) << std::endl;
-                Save_log.r_x = static_x;
-                Save_log.r_y = static_y;
-                Save_log.s_x = static_x_err *cos(static_ct) + static_y_err *sin(static_ct);
-                Save_log.s_y = -static_x_err *sin(static_ct) + static_y_err *cos(static_ct);
-                Save_log.rt = goal_yaw;
-                Save_log.ct = yaw;
+            std::cout <<"static x: " << static_x_err *cos(static_ct) + static_y_err *sin(static_ct)<< ", static y: "<<  -static_x_err *sin(static_ct) + static_y_err *cos(static_ct) << std::endl;
+            Save_log.r_x = static_x;
+            Save_log.r_y = static_y;
+            Save_log.s_x = static_x_err *cos(static_ct) + static_y_err *sin(static_ct);
+            Save_log.s_y = -static_x_err *sin(static_ct) + static_y_err *cos(static_ct);
+            Save_log.rt = goal_yaw;
+            Save_log.ct = yaw;
         }
         else
         {
-                Save_log.r_x = current_goal_.pose.position.x;
-                Save_log.r_y = current_goal_.pose.position.y;
+            Save_log.r_x = current_goal_.pose.position.x;
+            Save_log.r_y = current_goal_.pose.position.y;
         }
 
 
         pub_log_data_.publish(Save_log);
-*/
+
 
     }
+    void SetQRPose(int id){//pcw for QR local
+        //just for test have to modify to real value
+        tunnel_pose = id*100;
+    }
+
     //Previous thoughts
     void DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call);
     void QRtestCallback(const std_msgs::Float32::ConstPtr& QR_flag_msgs);
+    void OdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs);
+
     void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs);
     //current thoughts
     bool docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp);
     void ModedecisionCallback(const std_msgs::Int32::ConstPtr &msg_cnt);
+
     void predoneCallback(const std_msgs::Empty::ConstPtr &msg_empty);
 
 private:
@@ -895,12 +927,14 @@ private:
     ros::Subscriber sub_pose_;
     ros::Subscriber sub_pose_driving_;
     ros::Subscriber sub_goal_;
-    ros::Subscriber sub_gmapping;
+
     ros::Subscriber sub_area_;
     ros::Subscriber sub_mode_;
     ros::Subscriber sub_QRinit_;
+    ros::Subscriber sub_odom_;
     ros::Subscriber sub_predone_;
     ros::Subscriber sub_mode_decision_;
+    ros::Subscriber sub_pose_dt_from_linearvel; //pcw for QR local
 
     ros::ServiceServer sub_docking_done_;
     ros::Publisher pub_localization_;
@@ -908,6 +942,7 @@ private:
     ros::Publisher pub_QR_;
     ros::Publisher pub_log_data_;
     ros::Publisher pub_mode_call_;
+    ros::Publisher pub_for_test_QR_local;//pcw for QR local
 
     bool is_rotating_ = false;
     bool init_start_ = false; //To initial odom and IMU
@@ -925,10 +960,18 @@ private:
     float g_x_err,g_y_err, g_rtheta,g_ctheta;
     int postech_mode;
     float line_y_pose = 0;//not necessary
-    unsigned int odom_update_cnt=0;//To update encoder odom while mapping
+
     //Cmaera
     int fid_ID=0;
     float fid_area=0;
+
+    //Linear vel pose from roverroboics_ros_drier
+    //pcw for QR local
+    double dt_x_by_linearvel = 0;
+    double dt_y_by_linearvel = 0;
+    double pos_x_by_linearvel = 0;
+    double pos_y_by_linearvel = 0;
+    //
 
     //Decision
     unsigned int behavior_cnt =6;
@@ -941,6 +984,13 @@ private:
     //To recognize only one press for joystick
     unsigned int switch_flag0 =0;
     unsigned int switch_flag1 =0;
+
+    double past_time=0;
+    double tunnel_pose =0;
+    int mobile_direction =1;
+
+
+    unsigned int camera_on_cnt =0;
 
     std::vector<geometry_msgs::PoseStamped> goal_set_;
     geometry_msgs::PoseStamped current_goal_;
@@ -961,12 +1011,15 @@ private:
     } Config;
     Config config_;
 
+
 };
 void LocalizationNode::areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs) //QR detection Aurco realsense for a front camera.
 {
     fid_ID = (int) area_msgs->data[0];
     fid_area =area_msgs->data[1];
     //ROS_INFO("fid_ID: %d, are: %f",fid_ID, fid_area);
+
+    SetQRPose(fid_ID);
 }
 void LocalizationNode::DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call)
 {
@@ -1015,6 +1068,19 @@ void LocalizationNode::QRtestCallback(const std_msgs::Float32::ConstPtr& QR_flag
         ROS_INFO("When HJ_MODE==2, without QR initialzation");
     }
 }
+void LocalizationNode::OdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs)
+{
+    double dt = 0;
+    ros::Time ros_now_time = ros::Time::now();
+    double now_time = ros_now_time.toSec();
+    //tf2_ros::TransformBroadcaster odom_broadcaster;
+
+    dt = now_time - past_time;
+    past_time = now_time;
+
+    tunnel_pose += mobile_direction*odom_msgs->twist.twist.linear.x * dt ;
+}
+
 
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);

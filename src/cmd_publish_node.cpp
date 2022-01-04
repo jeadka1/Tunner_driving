@@ -19,7 +19,17 @@
 #include <leo_driving/Mode.h>
 
 
+#include "tf/tf.h"
+#include "tf/tfMessage.h"
+
+#include <tf/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+
+#define INIT_WAIT 10
+
 using namespace message_filters;
+using namespace std;
 
 enum MODE_{
     CHARGE_MODE,
@@ -67,6 +77,8 @@ class CmdPublishNode : public nodelet::Nodelet {
     bool once_flag = false;
     bool RP_MODE= true;
     bool local_data_receive = false;
+    unsigned int gmapping_cnt=0;
+    unsigned int gmapping_start_cnt=0;
 
     // Aisle
     float line_start_y_ = -30;
@@ -90,6 +102,8 @@ class CmdPublishNode : public nodelet::Nodelet {
     unsigned int switch_flag0 = true;
     unsigned int switch_flag1 = true;
 
+    unsigned int odom_update_cnt=0;//To update encoder odom while mapping
+    unsigned int docking_out_cnt=0;
 public:
     CmdPublishNode() = default;
 
@@ -135,16 +149,117 @@ private:
         sub_mode_call_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &CmdPublishNode::modeCallback, this);
         sub_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 20, &CmdPublishNode::publishCmd, this);
 
+
+
         sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &CmdPublishNode::SpeedCallback, this);
         //sub_integratedpose_ = nhp.subscribe("/state/pose", 1, &CmdPublishNode::PoseCallback, this);
-
-        //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &CmdPublishNode::areaDataCallback, this);
 
         pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
         pub_docking_end_ = nhp.advertise<std_msgs::Int32> ("/joy_from_cmd", 1); // Temperary To finish with joystick
         pub_prelidar_end_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/end", 10);
-    };
 
+        //sub_gmapping= nhp.subscribe<std_msgs::Int32>("/tf_listener", 1, &CmdPublishNode::set_odom, this); //Mapping position data when mapping
+        //sub_gmapping= nhp.subscribe<tf::tfMessage>("/tf", 1, &CmdPublishNode::set_odom, this); //Mapping position data when mapping
+        //sub_gmapping= nhp.subscribe<std_msgs::Float32MultiArray>("/gmapping/pose", 1, &CmdPublishNode::set_odom, this); //Mapping position data when mapping
+
+    };
+    //void set_odom(const tf::tfMessage::ConstPtr& msg)
+    void set_odom(const std_msgs::Float32MultiArray::ConstPtr& pose_data)
+    {
+        float data_plot;
+        float x,y,yaw;
+        char system_data[200],data_format[100];
+        x = round(pose_data->data[0]*100)/100;
+        y = round(pose_data->data[1]*100)/100;
+        yaw = round(pose_data->data[2]*100)/100;
+
+/*        cout<<"x: " <<x <<", y: " << y<< ", yaw: " <<yaw<<endl;
+        gmapping_cnt++;
+        if(gmapping_cnt >=3)
+        {
+            gmapping_cnt=0;
+            sprintf(data_format, "odom_x: %f odom_y: %f odom_theta: %f",x,y,yaw);
+            sprintf(system_data, "rosservice call /odom_init %s",data_format);
+            system(system_data); //Intialize Encoder
+        }
+*/
+
+//        if(gmapping_start_cnt <10)
+//        {
+//            gmapping_start_cnt++;
+//            ROS_INFO("wait for init odom");
+//        }
+//        else
+//        {
+//            ROS_INFO("test for init odom");
+//            gmapping_cnt++;
+//            if(gmapping_cnt >=10)
+//            {
+//                gmapping_cnt =0;
+//                sprintf(system_data, "rosservice call /odom_init %f %f %f",x,y,yaw);
+//                system(system_data); //Intialize Encoder
+//            }
+//        }
+
+//        tf::StampedTransform transform;
+//        tf::TransformListener tf_listener;
+//        if (!tf_listener.waitForTransform("/map", "/odom", ros::Time(0), ros::Duration(0.5), ros::Duration(0.01)))
+//        {
+//            ROS_ERROR("Unable to get pose from TF");
+//            return;
+//        }
+//        try
+//        {
+//            tf_listener.lookupTransform("/map", "/odom", ros::Time(0), transform);
+//        }
+//        catch (const tf::TransformException &e) {
+//            ROS_ERROR("%s",e.what());
+//        }
+//        tf2::Quaternion orientation (transform.getRotation().x(), transform.getRotation().y(), transform.getRotation().z(), transform.getRotation().w());
+//        tf2::Matrix3x3 m(orientation);
+
+//        double roll, pitch, yaw; //double
+//        m.getRPY(roll, pitch, yaw);
+//        std::cout<<"-------------------x: "<<transform.getOrigin().x()<<std::endl;
+//        std::cout<<"-------------------y: "<<transform.getOrigin().y()<<std::endl;
+//        std::cout<<"-------------------yaw: "<<yaw<<std::endl;
+        //Go through all the tf frame information and select the one you are interested in
+
+//        for(int i=0; i < msg->transforms.size();i++){
+//            if (msg->transforms[i].header.frame_id == "map" && msg->transforms[i].child_frame_id == "odom"){
+//                odom_update_cnt++;
+//                if(odom_update_cnt>20)
+//                {
+//                    odom_update_cnt =0;
+//                    std::cout<<"-------------------"<<std::endl;
+////                    cout << "Msg Size: " << msg->transforms.size() << endl;
+////                    cout << "Header Frame: " << msg->transforms[i].header.frame_id << endl;
+////                    cout << "Child Frame: " << msg->transforms[i].child_frame_id << endl;
+////                    cout << "Transform: " << endl << msg->transforms[i].transform << endl;
+////                    cout << "Vector3: " << endl << msg->transforms[i].transform.translation << endl;
+////                    cout << "Quaternion: " << endl << msg->transforms[i].transform.rotation << endl;
+
+//                    tf::Matrix3x3 Rotation;
+//                    Rotation.setRotation(tf::Quaternion(msg->transforms[i].transform.rotation.x,
+//                                                        msg->transforms[i].transform.rotation.y, msg->transforms[i].transform.rotation.z,
+//                                                        msg->transforms[i].transform.rotation.w));
+
+//                    tf::Vector3 traslation;
+//                    traslation = tf::Vector3(msg->transforms[i].transform.translation.x,
+//                                             msg->transforms[i].transform.translation.y,
+//                                             msg->transforms[i].transform.translation.z);
+
+//                    double roll, pitch, yaw;
+//                    Rotation.getEulerYPR(yaw, pitch, roll);
+//                    cout <<"(x,y,yaw): "<<msg->transforms[i].transform.translation.x<<", "<<msg->transforms[i].transform.translation.y<<", "<<yaw<<endl;
+//                    tf::Matrix3x3 RotationYPR;
+//                    RotationYPR.setEulerYPR(yaw,pitch,roll);
+//                    std::cout<<"-------------------"<<std::endl;
+//                }
+//            }
+//        }
+
+    }
     void joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
     {
         std_msgs::Int32 joy_msg_to_node;
@@ -307,13 +422,13 @@ private:
             cmd_vel.linear.x = 0.0;
             cmd_vel.linear.z = 0.0;
             pub_cmd_.publish(cmd_vel);
-            if(init_cnt==10)
+            if(init_cnt==INIT_WAIT)
             {
                 system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
                 system("rosservice call /reset_odom"); //Intialize IMU
                 system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
             }
-            if(init_cnt==80)
+            if(init_cnt==INIT_WAIT*8)
                 init_cnt =0;
             return;
         }
@@ -343,7 +458,7 @@ private:
             }*/ // below  else if
             
             // (1) Right Obstacle Update	(y:오른쪽이 음수)
-            if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 0.6)
+            if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 1)
             {
                 //Start- end = length
                 //robot_length = 0.5m
@@ -358,7 +473,7 @@ private:
                 spare_length = 0;
             }
             // (2) Left Obstacle Update (y:왼쪽이 양수)
-            else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_< 0.6)
+            else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_< 1)
             {
                 std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
                 //float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
@@ -510,6 +625,7 @@ private:
                 cmd_vel.angular.z = -config_.max_rot_;
 
             //pub_cmd_.publish(cmd_vel);
+            docking_out_cnt= 0;
             break;
         case DOCK_OUT_MODE: // with RPlidar
             cmd_vel.linear.x = 0.1;
@@ -525,7 +641,10 @@ private:
             else if(cmd_vel.angular.z< -config_.max_rot_)
                 cmd_vel.angular.z = -config_.max_rot_;
 
-            pub_cmd_.publish(cmd_vel);
+            docking_out_cnt++;
+            if(docking_out_cnt<10)
+                pub_cmd_.publish(cmd_vel);
+
             break;
 
         default:
@@ -543,6 +662,7 @@ private:
     ros::Subscriber sub_driving_;
     ros::Subscriber sub_mode_call_;
     ros::Subscriber sub_speed_;//For reference speed
+    ros::Subscriber sub_gmapping;
     
     ros::Publisher pub_cmd_;
     ros::Publisher pub_prelidar_end_;
