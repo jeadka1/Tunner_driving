@@ -9,7 +9,7 @@
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="true"/>
     <arg name="use_static_tf" default="true"/>
-    <arg name="use_obs" default="false"/>
+    <arg name="use_obs" default="true"/>
      
     <node pkg="rosservice" type="rosservice" name="rosservice" args="call /odom_init 0.0 0.0 0.0"/>
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/>

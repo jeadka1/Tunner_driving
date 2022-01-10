@@ -20,10 +20,18 @@
 #include <nav_msgs/MapMetaData.h>
 #include "nav_msgs/Odometry.h"
 #include "time.h"
+
 #include <leo_driving/charging_done.h>
 #include <leo_driving/PlotMsg.h>
 
 #define STOP_MAX 30
+
+
+#define TorotateAtHome 0.3 //m
+#define QR_DISTANCE 2000
+#define QR_reset    100//To initialize Docking out
+#define QR_home     3//101 To rotate at home
+#define QR_end      4//102 To rotate to go home
 
 enum MODE_{
     CHARGE_MODE,
@@ -147,13 +155,12 @@ private:
         pub_robot_pose_.publish(amcl_pose_msg);
         current_pose = *amcl_pose_msg;
         //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
-
-
     }
     void poseCallback(const std_msgs::Int32::ConstPtr &empty_pose_msg)
     {
         if(FIRST_START_FLAG==true)
         {
+            postech_mode = STOP_MODE;
             FIRST_START_FLAG=false;
             if(config_.HJ_MODE_==1)//To start from Docking station
                 behavior_cnt =6;
@@ -181,8 +188,8 @@ private:
             localization_msgs.data.push_back(0); // global_theta_err
             localization_msgs.data.push_back(0); // global_c_theta_err
 
-
             localization_msgs.data.push_back(0); // initcall
+            localization_msgs.data.push_back(0); // dokcking_cmd
 
             pub_localization_.publish(localization_msgs);
             return;
@@ -191,7 +198,7 @@ private:
         {
             ROS_INFO_ONCE("Goal is set");
             goal_count_ =2;
-            if(behavior_cnt==2)
+            if(behavior_cnt==2 ||  behavior_cnt ==6)
             {
                 current_goal_.pose.position.x = config_.Main_start_x_;
                 current_goal_.pose.position.y = config_.Main_start_y_;
@@ -221,6 +228,7 @@ private:
         std::cout << "goal (x,y): " <<"(" <<current_goal_.pose.position.x << ", " <<current_goal_.pose.position.y << ")" <<std::endl;
         std::cout << "curr (x,y): " <<"(" <<pose_msg.pose.pose.position.x << ", " << pose_msg.pose.pose.position.y << ")" <<std::endl;
         std::cout << "distance :" << global_dist_err <<std::endl;
+        std::cout << "tunnel pose: " << tunnel_pose << std::endl;
 
         //std::cout <<" " <<std::endl;
 
@@ -377,7 +385,11 @@ private:
                 init_start_ = false;
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction =1;
-                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 1))
+                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+                    Next_step = true;
+                    ROS_INFO("Tunnel POse STOP !!!!");
+                }
+                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=QR_DISTANCE && fid_ID == QR_end))
                 {
                     Next_step=false;
                     behavior_cnt++;
@@ -414,6 +426,10 @@ private:
                         global_ang_err -= 2*M_PI;
                     else if(global_ang_err < -M_PI)
                         global_ang_err += 2*M_PI;
+                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
+                        Next_step = true;
+                        ROS_INFO("Tunnel POse STOP !!!!");
+                    }
                     if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
                     {
                         Next_step=false;
@@ -434,8 +450,26 @@ private:
             case 2: //moving back to home
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction  = -1;
-                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=5000 && fid_ID == 2) )
+                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+                    Next_step = true;
+                    ROS_INFO("Tunnel POse STOP !!!!");
+                }
+                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=QR_DISTANCE && fid_ID == QR_home) )
+                /*if(fid_area >=QR_DISTANCE && fid_ID == QR_home)
                 {
+                    if(home_arrival_flag)
+                    {
+                        home_arrival_flag =false;
+                        current_tunnel_pose =tunnel_pose;
+                    }
+                    if(fabs(current_tunnel_pose - tunnel_pose) > TorotateAtHome)
+                        Next_step = true;
+                }
+
+                if(Next_step)
+*/
+                {
+                    home_arrival_flag = true;
                     Next_step=false;
                     behavior_cnt++;
                     postech_mode = STOP_MODE;
@@ -470,7 +504,10 @@ private:
                         global_ang_err -= 2*M_PI;
                     else if(global_ang_err < -M_PI)
                         global_ang_err += 2*M_PI;
-
+                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
+                        Next_step = true;
+                        ROS_INFO("Tunnel POse STOP !!!!");
+                    }
                     if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
                     {
                         Next_step=false;
@@ -489,6 +526,7 @@ private:
 
             case 4:// docking in :
                 postech_mode = DOCK_IN_MODE;//moving
+		mobile_direction = 1;
                 if(Joy_mode==false)
                 {
                     mode_dockin.data = 4;
@@ -500,7 +538,7 @@ private:
                     pub_mode_call_.publish(mode_dockin);
                 }
 
-                if(Next_step||fid_area >=5000 && fid_ID == 3)
+                if(Next_step||fid_area >=QR_DISTANCE && fid_ID == 104) //TODO
                 {
                     mode_dockin.data = 0;
                     pub_mode_call_.publish(mode_dockin);//To stop dock in.
@@ -523,13 +561,25 @@ private:
                 break;
 
             case 6://dokcing_out : rostopic pub ending_charging
-                postech_mode = DOCK_OUT_MODE;//moving
-
-                camera_on_cnt++;
+		//mobile_direction =1;
+		if(docking_out_flag)
+		{
+			docking_out_flag = false;
+			init_start_=true;
+			tunnel_pose = 0;
+                }
+		else
+		{
+			init_start_=false;
+		}
+		postech_mode = DOCK_OUT_MODE;
+/*              camera_on_cnt++;
                 if(camera_on_cnt>20)
                 {
+                    postech_mode = MANUAL_MODE;
                     if(Joy_mode==false)
                     {
+                        //only camera dock out
                         mode_dockin.data = 5;
                         pub_mode_call_.publish(mode_dockin);
                     }
@@ -539,16 +589,26 @@ private:
                         pub_mode_call_.publish(mode_dockin);
                     }
                 }
+                else
+                {
+                    std::cout<<  "RP Docking out: " <<std::endl;
+                    postech_mode = DOCK_OUT_MODE;
+                }
+*/
 
-                if(Next_step||fid_area >=5000 && fid_ID == 4)// To use AMCL pose probably
+                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+                    Next_step = true;
+                    ROS_INFO("Tunnel POse STOP !!!!");
+                }
+                if(Next_step|| global_dist_err<config_.global_dist_boundary_ || fid_area >=QR_DISTANCE && fid_ID == QR_reset)// To use AMCL pose probably
                 {
                     mode_dockin.data = 0;
                     pub_mode_call_.publish(mode_dockin);//To stop dock in.
                     Next_step=false;
                     behavior_cnt=0;
                     postech_mode = STOP_MODE;
-                    init_start_ = true;
-                    tunnel_pose = 0;
+                    //init_start_ = true;
+		    docking_out_flag = true;
                     //goal_index_ ++;
                     camera_on_cnt=0;
                 }
@@ -560,6 +620,7 @@ private:
                 break;
             }
             ROS_INFO("Behavior count: %d", behavior_cnt);
+
         }
         //-----------------
         else if(config_.HJ_MODE_ ==2){ //Without docking postech mode
@@ -877,6 +938,8 @@ private:
 
         localization_msgs.data.push_back(init_start_);
 
+        localization_msgs.data.push_back(Docking_out_cmd);
+
         pub_localization_.publish(localization_msgs);
         fid_area = 0; // To reset for the fid_area. because if the ID is not detected the previous data is still in.
         std::cout<< "\n\n"<<std::endl;
@@ -907,7 +970,9 @@ private:
     }
     void SetQRPose(int id){//pcw for QR local
         //just for test have to modify to real value
-        tunnel_pose = id*100;
+        //if(id <100)
+        if(id==1 || id ==2)
+            tunnel_pose = id*100;
     }
 
     //Previous thoughts
@@ -922,11 +987,14 @@ private:
 
     void predoneCallback(const std_msgs::Empty::ConstPtr &msg_empty);
 
+
 private:
     ros::Subscriber sub_joy_;
     ros::Subscriber sub_pose_;
     ros::Subscriber sub_pose_driving_;
     ros::Subscriber sub_goal_;
+    ros::Subscriber sub_front_camera;
+
 
     ros::Subscriber sub_area_;
     ros::Subscriber sub_mode_;
@@ -986,9 +1054,15 @@ private:
     unsigned int switch_flag1 =0;
 
     double past_time=0;
-    double tunnel_pose =0;
+    double tunnel_pose =0, current_tunnel_pose =0;
     int mobile_direction =1;
 
+    bool home_arrival_flag =true;
+    bool docking_out_flag = true;
+    float Docking_out_cmd =0;
+
+    double encoder_angle = 0;
+    double encoder_angular = 0;
 
     unsigned int camera_on_cnt =0;
 
@@ -1079,9 +1153,18 @@ void LocalizationNode::OdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msg
     past_time = now_time;
 
     tunnel_pose += mobile_direction*odom_msgs->twist.twist.linear.x * dt ;
+    encoder_angular = odom_msgs->twist.twist.angular.z;
+    if(behavior_cnt == 1 || behavior_cnt == 3){
+        encoder_angle += encoder_angular;
+    }
+    else{
+        encoder_angle = 0;
+    }
+    geometry_msgs::Point tunnel_pos_pub;
+    tunnel_pos_pub.x= tunnel_pose;
+    tunnel_pos_pub.z = odom_msgs->twist.twist.angular.z;
+    pub_for_test_QR_local.publish(tunnel_pos_pub);
 }
-
-
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);
 

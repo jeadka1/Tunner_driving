@@ -9,7 +9,8 @@
     <arg name="use_mode" default="false"/> <!-- not gonna use-->
     <arg name="use_obs" default="true"/>
 
-    <arg name="map_file" default="/home/cocel/catkin_ws/maps/docking_test.yaml"/> <!-- in front of computer -->
+    <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/seould_inside_dock.yaml"/-->
+    <arg name="map_file" default="/home/cocel/catkin_ws/maps/seoul_gmap_200.yaml"/> <!-- in front of computer -->
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/short_seoul.yaml"/-->
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/211122_mosa_in.yaml"/-->
 

@@ -103,7 +103,7 @@ class CmdPublishNode : public nodelet::Nodelet {
     unsigned int switch_flag1 = true;
 
     unsigned int odom_update_cnt=0;//To update encoder odom while mapping
-    float docking_out_flag=0;
+    unsigned int docking_out_cnt=0;
 public:
     CmdPublishNode() = default;
 
@@ -373,8 +373,6 @@ private:
 
         init_call = local_msgs->data[5];
 
-        docking_out_flag = local_msgs->data[6];
-
         local_data_receive =true;
     }
 
@@ -426,9 +424,9 @@ private:
             pub_cmd_.publish(cmd_vel);
             if(init_cnt==INIT_WAIT)
             {
-                //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
-                //system("rosservice call /reset_odom"); //Intialize IMU
-                //system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
+                system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+                system("rosservice call /reset_odom"); //Intialize IMU
+                system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
             }
             if(init_cnt==INIT_WAIT*8)
                 init_cnt =0;
@@ -438,7 +436,6 @@ private:
         //// 2. Autonomous Driving
 
         float y_err_local = ref_y_ - near_y_;
-	//std::cout<<"---------------------------ais: " << y_err_local<<std::endl;
         // 2.1 Check Obstacles
 
         if (config_.check_obstacles_ && (Mode_type == AUTO_LIDAR_MODE || Mode_type == AUTO_IMAGE_MODE))
@@ -450,7 +447,7 @@ private:
             // (0) Front Obstacle Update
 
             //std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
-
+            /*
             if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 )
             {
                 cmd_vel.linear.x = 0.0;
@@ -458,10 +455,10 @@ private:
                 pub_cmd_.publish(cmd_vel);
                 std::cout<<"Front obstacle is deteced"<<std::endl;
                 return;
-            } // below  else if
+            }*/ // below  else if
             
             // (1) Right Obstacle Update	(y:오른쪽이 음수)
-            else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 1)
+            if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 1)
             {
                 //Start- end = length
                 //robot_length = 0.5m
@@ -614,24 +611,8 @@ private:
             break;
 
         case DOCK_IN_MODE: //Hanjeon gives us the err of y
-//            cmd_vel.linear.x = -0.1;
-//            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
-
-//            if(cmd_vel.linear.x> config_.max_vel_)
-//                cmd_vel.linear.x = config_.max_vel_;
-//            else if(cmd_vel.linear.x< -config_.max_vel_)
-//                cmd_vel.linear.x = -config_.max_vel_;
-
-//            if(cmd_vel.angular.z> config_.max_rot_)
-//                cmd_vel.angular.z = config_.max_rot_;
-//            else if(cmd_vel.angular.z< -config_.max_rot_)
-//                cmd_vel.angular.z = -config_.max_rot_;
-
-            //pub_cmd_.publish(cmd_vel);
-            break;
-        case DOCK_OUT_MODE: // with RPlidar
-            cmd_vel.linear.x = 0.1;
-            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local/0.6;
+            cmd_vel.linear.x = -0.1;
+            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
 
             if(cmd_vel.linear.x> config_.max_vel_)
                 cmd_vel.linear.x = config_.max_vel_;
@@ -643,7 +624,26 @@ private:
             else if(cmd_vel.angular.z< -config_.max_rot_)
                 cmd_vel.angular.z = -config_.max_rot_;
 
-            pub_cmd_.publish(cmd_vel);
+            //pub_cmd_.publish(cmd_vel);
+            docking_out_cnt= 0;
+            break;
+        case DOCK_OUT_MODE: // with RPlidar
+            cmd_vel.linear.x = 0.1;
+            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
+
+            if(cmd_vel.linear.x> config_.max_vel_)
+                cmd_vel.linear.x = config_.max_vel_;
+            else if(cmd_vel.linear.x< -config_.max_vel_)
+                cmd_vel.linear.x = -config_.max_vel_;
+
+            if(cmd_vel.angular.z> config_.max_rot_)
+                cmd_vel.angular.z = config_.max_rot_;
+            else if(cmd_vel.angular.z< -config_.max_rot_)
+                cmd_vel.angular.z = -config_.max_rot_;
+
+            docking_out_cnt++;
+            if(docking_out_cnt<10)
+                pub_cmd_.publish(cmd_vel);
 
             break;
 
@@ -687,7 +687,7 @@ private:
         bool amcl_driving_;
         bool check_obstacles_;
 
-        double rot_kx_;
+        double rot_kx_; 
         double rot_ky_;
         double rot_kt_;
         double min_vel_;

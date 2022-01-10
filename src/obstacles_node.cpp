@@ -127,6 +127,8 @@ private:
 			
 			if(abs(a_left-a_right)<0.1){ //0.1?
 				drain_exist = true;
+                                std::cerr << "===========drain exist============== " << std::endl;
+
 			}
 
 /*
@@ -234,7 +236,7 @@ private:
 		// |y|<0.3 (left,right)
 		pass.setInputCloud (output_obs);         
 		pass.setFilterFieldName ("y");         
-		pass.setFilterLimits (-0.3, 0.3);    
+                pass.setFilterLimits (-0.25, 0.25);
 		//pass.setFilterLimitsNegative (false);  
 		pass.filter (*output_obs);  
 
