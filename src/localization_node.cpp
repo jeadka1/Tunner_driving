@@ -32,6 +32,7 @@
 #define QR_reset    100//To initialize Docking out
 #define QR_home     3//101 To rotate at home
 #define QR_end      4//102 To rotate to go home
+#define turning_angle_encoder 3.05 //170 degree
 
 enum MODE_{
     CHARGE_MODE,
@@ -74,6 +75,8 @@ private:
         nhp.param("Main_start_y", config_.Main_start_y_, 0.0);
         nhp.param("Main_goal_x", config_.Main_goal_x_, 0.0);
         nhp.param("Main_goal_y", config_.Main_goal_y_, 0.0);
+        nhp.param("tunnel_start", config_.tunnel_start_, 0.0);
+        nhp.param("tunnel_goal", config_.tunnel_goal_, 0.0);
 
 
         sub_joy_ = nhp.subscribe<std_msgs::Int32>("/joy_from_cmd", 10, &LocalizationNode::DockingCallback, this); // Joystick data from cmd_node
@@ -85,7 +88,7 @@ private:
         sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
         //	sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
 
-        sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);
+        //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);//QR fiducital_area detection
         sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
 
         sub_QRinit_ = nhp.subscribe("/QR_TEST", 1, &LocalizationNode::QRtestCallback, this); //While HJ_mode==1 or 2, the mode is changed to another HJ_mode ==2 or 1
@@ -106,7 +109,7 @@ private:
 
         pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); //To communicate with cmd_node
         pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10);//To send to robot-station or Hanjeon
-        pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10); //To send to robot-station or Hanjeon
+        //pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10); //To send to robot-station or Hanjeon --> not gonna use
         pub_log_data_= nhp.advertise<leo_driving::PlotMsg>("/PlotMsg_data", 10); //To save the data to plot
         pub_mode_call_= nhp.advertise<std_msgs::Int32>("/mode/low", 10); //To use Dock in wiht Hanjeon
         \
@@ -202,6 +205,7 @@ private:
             {
                 current_goal_.pose.position.x = config_.Main_start_x_;
                 current_goal_.pose.position.y = config_.Main_start_y_;
+                Tunnel_reference = config_.tunnel_start_;
             }
             else if(behavior_cnt ==0)
             {
@@ -209,11 +213,13 @@ private:
                 {
                     current_goal_.pose.position.x = goal_set_[0].pose.position.x;
                     current_goal_.pose.position.y = goal_set_[0].pose.position.y;
+                    Tunnel_reference = config_.tunnel_goal_; //TODO to change from event goal position
                 }
                 else
                 {
                     current_goal_.pose.position.x = config_.Main_goal_x_;
                     current_goal_.pose.position.y = config_.Main_goal_y_;
+                    Tunnel_reference = config_.tunnel_goal_;
                 }
             }
         }
@@ -385,11 +391,14 @@ private:
                 init_start_ = false;
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction =1;
-                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
-                    Next_step = true;
-                    ROS_INFO("Tunnel POse STOP !!!!");
-                }
-                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=QR_DISTANCE && fid_ID == QR_end))
+//                driving with AMCL pose
+//                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+//                    Next_step = true;
+//                    ROS_INFO("Tunnel POse STOP !!!!");
+//                }
+//                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=QR_DISTANCE && fid_ID == QR_end))
+//                driving Tunnel pose
+                if(Next_step||fabs(Tunnel_reference - tunnel_pose) < config_.global_dist_boundary_)
                 {
                     Next_step=false;
                     behavior_cnt++;
@@ -426,11 +435,14 @@ private:
                         global_ang_err -= 2*M_PI;
                     else if(global_ang_err < -M_PI)
                         global_ang_err += 2*M_PI;
-                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
-                        Next_step = true;
-                        ROS_INFO("Tunnel POse STOP !!!!");
-                    }
-                    if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+//                    driving with AMCL
+//                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
+//                        Next_step = true;
+//                        ROS_INFO("Tunnel POse STOP !!!!");
+//                    }
+//                    if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+//                    driving Tunnel pose
+                    if(Next_step || fabs(encoder_angle - turning_angle_encoder) < config_.global_angle_boundary_)
                     {
                         Next_step=false;
                         behavior_cnt++;
@@ -450,24 +462,25 @@ private:
             case 2: //moving back to home
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction  = -1;
-                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
-                    Next_step = true;
-                    ROS_INFO("Tunnel POse STOP !!!!");
-                }
-                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=QR_DISTANCE && fid_ID == QR_home) )
-                /*if(fid_area >=QR_DISTANCE && fid_ID == QR_home)
-                {
-                    if(home_arrival_flag)
-                    {
-                        home_arrival_flag =false;
-                        current_tunnel_pose =tunnel_pose;
-                    }
-                    if(fabs(current_tunnel_pose - tunnel_pose) > TorotateAtHome)
-                        Next_step = true;
-                }
-
-                if(Next_step)
+//                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+//                    Next_step = true;
+//                    ROS_INFO("Tunnel POse STOP !!!!");
+//                }
+//                if(Next_step||global_dist_err < config_.global_dist_boundary_ || (fid_area >=QR_DISTANCE && fid_ID == QR_home) )
+/* //To rotate with QR. It should be changed with line color detection
+//                if(fid_area >=QR_DISTANCE && fid_ID == QR_home)
+//                {
+//                    if(home_arrival_flag)
+//                    {
+//                        home_arrival_flag =false;
+//                        current_tunnel_pose =tunnel_pose;
+//                    }
+//                    if(fabs(current_tunnel_pose - tunnel_pose) > TorotateAtHome)
+//                        Next_step = true;
+//                }
+//                if(Next_step)
 */
+                if(Next_step||fabs(Tunnel_reference - tunnel_pose) < config_.global_dist_boundary_)
                 {
                     home_arrival_flag = true;
                     Next_step=false;
@@ -504,11 +517,12 @@ private:
                         global_ang_err -= 2*M_PI;
                     else if(global_ang_err < -M_PI)
                         global_ang_err += 2*M_PI;
-                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
-                        Next_step = true;
-                        ROS_INFO("Tunnel POse STOP !!!!");
-                    }
-                    if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+//                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
+//                        Next_step = true;
+//                        ROS_INFO("Tunnel POse STOP !!!!");
+//                    }
+//                    if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
+                    if(Next_step || fabs(encoder_angle - turning_angle_encoder) < config_.global_angle_boundary_)
                     {
                         Next_step=false;
                         behavior_cnt++;
@@ -538,7 +552,7 @@ private:
                     pub_mode_call_.publish(mode_dockin);
                 }
 
-                if(Next_step||fid_area >=QR_DISTANCE && fid_ID == 104) //TODO
+                if(Next_step) //TODO
                 {
                     mode_dockin.data = 0;
                     pub_mode_call_.publish(mode_dockin);//To stop dock in.
@@ -573,6 +587,8 @@ private:
 			init_start_=false;
 		}
 		postech_mode = DOCK_OUT_MODE;
+
+//                camera docking out
 /*              camera_on_cnt++;
                 if(camera_on_cnt>20)
                 {
@@ -596,11 +612,13 @@ private:
                 }
 */
 
-                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
-                    Next_step = true;
-                    ROS_INFO("Tunnel POse STOP !!!!");
-                }
-                if(Next_step|| global_dist_err<config_.global_dist_boundary_ || fid_area >=QR_DISTANCE && fid_ID == QR_reset)// To use AMCL pose probably
+//                Driving with AMCL
+//                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+//                    Next_step = true;
+//                    ROS_INFO("Tunnel POse STOP !!!!");
+//                }
+//                if(Next_step|| global_dist_err<config_.global_dist_boundary_ || fid_area >=QR_DISTANCE && fid_ID == QR_reset)// To use AMCL pose probably
+                if(Next_step|| fabs(Tunnel_reference - tunnel_pose) < config_.global_dist_boundary_)
                 {
                     mode_dockin.data = 0;
                     pub_mode_call_.publish(mode_dockin);//To stop dock in.
@@ -1055,6 +1073,7 @@ private:
 
     double past_time=0;
     double tunnel_pose =0, current_tunnel_pose =0;
+    double Tunnel_reference=0;
     int mobile_direction =1;
 
     bool home_arrival_flag =true;
@@ -1082,6 +1101,8 @@ private:
         double Main_start_y_;
         double Main_goal_x_;
         double Main_goal_y_;
+        double tunnel_start_;
+        double tunnel_goal_;
     } Config;
     Config config_;
 
@@ -1147,7 +1168,6 @@ void LocalizationNode::OdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msg
     double dt = 0;
     ros::Time ros_now_time = ros::Time::now();
     double now_time = ros_now_time.toSec();
-    //tf2_ros::TransformBroadcaster odom_broadcaster;
 
     dt = now_time - past_time;
     past_time = now_time;
@@ -1162,9 +1182,8 @@ void LocalizationNode::OdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msg
     }
     geometry_msgs::Point tunnel_pos_pub;
     tunnel_pos_pub.x= tunnel_pose;
-    tunnel_pos_pub.z = odom_msgs->twist.twist.angular.z;
+    tunnel_pos_pub.z = encoder_angle;
     pub_for_test_QR_local.publish(tunnel_pos_pub);
 }
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);
-
