@@ -48,7 +48,6 @@ add_service_files(
   RobotPose.srv
   WaypointPath.srv
   charging_done.srv
-  UpdateOdom.srv
 )
 
 ## Generate actions in the 'action' folder

@@ -23,7 +23,6 @@
 
 #include <leo_driving/charging_done.h>
 #include <leo_driving/PlotMsg.h>
-#include <leo_driving/UpdateOdom.h>
 
 #define STOP_MAX 30
 
@@ -78,33 +77,28 @@ private:
         nhp.param("Main_goal_y", config_.Main_goal_y_, 0.0);
         nhp.param("tunnel_start", config_.tunnel_start_, 0.0);
         nhp.param("tunnel_goal", config_.tunnel_goal_, 0.0);
-        nhp.param("amcl_driving", config_.amcl_driving_, true);
 
 
         sub_joy_ = nhp.subscribe<std_msgs::Int32>("/joy_from_cmd", 10, &LocalizationNode::DockingCallback, this); // Joystick data from cmd_node
 
 
-        if(config_.amcl_driving_==true)
-        {
-            sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);//Clicked point from RVIZ
-            sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
-            sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
-        }
+
+        sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);//Clicked point from RVIZ
+        sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
+        sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
         //	sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
 
         //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);//QR fiducital_area detection
         sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
 
         sub_QRinit_ = nhp.subscribe("/QR_TEST", 1, &LocalizationNode::QRtestCallback, this); //While HJ_mode==1 or 2, the mode is changed to another HJ_mode ==2 or 1
-        sub_odom_ = nhp.subscribe("/robot_odom", 1, &LocalizationNode::RobotOdomCallback, this);
-
-        robot_odom_publisher_ = nhp.advertise<nav_msgs::Odometry>("/odom", 1);
+        sub_odom_ = nhp.subscribe("/odom", 1, &LocalizationNode::OdomCallback, this);
 
         sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
 
         sub_mode_decision_ = nhp.subscribe<std_msgs::Int32>("/Mode_Decision", 1, &LocalizationNode::ModedecisionCallback, this);//To jump behavior_cnd
 
-        initial_pos_subscriber_ = nhp.advertiseService("odom_init", &LocalizationNode::odominit, this);
+
 
         //sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this); //TODO Docking done from robot-station
 
@@ -995,7 +989,7 @@ private:
     //Previous thoughts
     void DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call);
     void QRtestCallback(const std_msgs::Float32::ConstPtr& QR_flag_msgs);
-    void RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs);
+    void OdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs);
 
     void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs);
     //current thoughts
@@ -1003,7 +997,6 @@ private:
     void ModedecisionCallback(const std_msgs::Int32::ConstPtr &msg_cnt);
 
     void predoneCallback(const std_msgs::Empty::ConstPtr &msg_empty);
-    bool odominit(leo_driving::UpdateOdom::Request& req, leo_driving::UpdateOdom::Response& res);
 
 
 private:
@@ -1018,22 +1011,17 @@ private:
     ros::Subscriber sub_mode_;
     ros::Subscriber sub_QRinit_;
     ros::Subscriber sub_odom_;
-    ros::Publisher robot_odom_publisher_;
-
     ros::Subscriber sub_predone_;
     ros::Subscriber sub_mode_decision_;
     ros::Subscriber sub_pose_dt_from_linearvel; //pcw for QR local
 
     ros::ServiceServer sub_docking_done_;
-    ros::ServiceServer initial_pos_subscriber_;
-
     ros::Publisher pub_localization_;
     ros::Publisher pub_robot_pose_;
     ros::Publisher pub_QR_;
     ros::Publisher pub_log_data_;
     ros::Publisher pub_mode_call_;
     ros::Publisher pub_for_test_QR_local;//pcw for Tunnel pose
-
 
     bool is_rotating_ = false;
     bool init_start_ = false; //To initial odom and IMU
@@ -1090,13 +1078,6 @@ private:
 
     unsigned int camera_on_cnt =0;
 
-    //odom publish
-    double odom_x=0;
-    double odom_y=0;
-    double odom_theta=0;
-    double update_x=0, update_y=0, update_theta=0;
-    bool odom_update=false,odom_init_flag=false;
-
     std::vector<geometry_msgs::PoseStamped> goal_set_;
     geometry_msgs::PoseStamped current_goal_;
 
@@ -1107,7 +1088,6 @@ private:
     {
         double global_dist_boundary_;
         double global_angle_boundary_;
-        bool amcl_driving_;
         int HJ_MODE_;
         bool Without_QR_move_;
         double Main_start_x_;
@@ -1116,19 +1096,11 @@ private:
         double Main_goal_y_;
         double tunnel_start_;
         double tunnel_goal_;
-
     } Config;
     Config config_;
 
 
 };
-bool LocalizationNode::odominit(leo_driving::UpdateOdom::Request& req, leo_driving::UpdateOdom::Response& res)
-{
-    odom_init_flag = true;
-    update_x = req.odom_x;
-    update_y = req.odom_y;
-    update_theta = req.odom_theta;
-}
 void LocalizationNode::areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs) //QR detection Aurco realsense for a front camera.
 {
     fid_ID = (int) area_msgs->data[0];
@@ -1184,7 +1156,7 @@ void LocalizationNode::QRtestCallback(const std_msgs::Float32::ConstPtr& QR_flag
         ROS_INFO("When HJ_MODE==2, without QR initialzation");
     }
 }
-void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs)
+void LocalizationNode::OdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs)
 {
     double dt = 0;
     ros::Time ros_now_time = ros::Time::now();
@@ -1196,7 +1168,7 @@ void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odo
     tunnel_pose += mobile_direction*odom_msgs->twist.twist.linear.x * dt ;
     encoder_angular = odom_msgs->twist.twist.angular.z;
     if(behavior_cnt == 1 || behavior_cnt == 3){
-        encoder_angle += encoder_angular* dt*2/3;
+        encoder_angle += encoder_angular;
     }
     else{
         encoder_angle = 0;
@@ -1205,57 +1177,6 @@ void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odo
     tunnel_pos_pub.x= tunnel_pose;
     tunnel_pos_pub.z = encoder_angle;
     pub_for_test_QR_local.publish(tunnel_pos_pub);
-
-
-    //odom
-    nav_msgs::Odometry odom_msg;
-    tf2::Quaternion q_new;
-
-    if(odom_update==true)
-    {
-        odom_update =false;
-        odom_x = update_x;
-        odom_y = update_y;
-        odom_theta = update_theta;
-    }
-    if(odom_init_flag)
-    {
-        odom_init_flag =false;
-
-        odom_x = 0.0;//update_x;
-        odom_y = 0.0;//update_y;
-        odom_theta = 0.0;//update_theta;
-    }
-
-    //theta = theta +  data.angular_vel * dt;//enc_theta_ratio_;
-    odom_theta = odom_theta +  encoder_angular * dt*2/3;//enc_theta_ratio_;
-
-    if(odom_theta > 3.141592)
-        odom_theta -= 2*3.141592;
-    if(odom_theta< -3.141592)
-        odom_theta += 2*3.141592;
-
-    odom_x = odom_x + odom_msgs->twist.twist.linear.x * cos(odom_theta) * dt;
-    odom_y = odom_y + odom_msgs->twist.twist.linear.x * sin(odom_theta) * dt;
-
-
-    q_new.setRPY(0, 0, odom_theta);
-    tf2::convert(q_new, odom_msg.pose.pose.orientation);
-
-    odom_msg.header.stamp = ros::Time::now();
-    odom_msg.header.frame_id = "odom";
-    odom_msg.child_frame_id = "base_link";
-
-    odom_msg.twist.twist.linear.x = odom_msgs->twist.twist.linear.x;
-    odom_msg.twist.twist.angular.z = encoder_angular;
-    odom_msg.pose.pose.position.x = odom_x;
-    odom_msg.pose.pose.position.y = odom_y;
-    odom_msg.pose.pose.position.z = 0.0;
-    odom_msg.pose.pose.orientation.x = q_new.x();
-    odom_msg.pose.pose.orientation.y = q_new.y();
-    odom_msg.pose.pose.orientation.z = q_new.z();//
-    odom_msg.pose.pose.orientation.w = q_new.w();//
-    robot_odom_publisher_.publish(odom_msg);
 }
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);

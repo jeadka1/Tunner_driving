@@ -129,6 +129,8 @@ private:
         ros::NodeHandle nhp = getPrivateNodeHandle();
 
         // Configuration
+        nhp.param("line_thresh", config_.line_thresh_, 0.5);
+        nhp.param("aisle_width", config_.aisle_width_, 0.6);
         nhp.param("Kpx_param", config_.Kpx_param_, 2.0);
         nhp.param("Kpy_param", config_.Kpy_param_, 1.1);
         nhp.param("Kpy_param_rot", config_.Kpy_param_rot_, 0.01);
@@ -180,8 +182,422 @@ private:
         //sub_gmapping= nhp.subscribe<tf::tfMessage>("/tf", 1, &CmdPublishNode::set_odom, this); //Mapping position data when mapping
         //sub_gmapping= nhp.subscribe<std_msgs::Float32MultiArray>("/gmapping/pose", 1, &CmdPublishNode::set_odom, this); //Mapping position data when mapping
 
+//        sub_scan_ = nhp.subscribe("/rp/scan", 10, &CmdPublishNode::cmdscanCallback, this);
+        pub_line_ = nhp.advertise<sensor_msgs::PointCloud2>("/cluster_line", 10);
+        pub_points_ = nhp.advertise<sensor_msgs::PointCloud2> ("/aisle_points", 10);
+
+        pub_prelidar_fail_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/fail", 10);
+        pub_lidar_fail_ = nhp.advertise<std_msgs::Empty> ("/auto_lidar_mode/fail", 10);
+
     };
     //void set_odom(const tf::tfMessage::ConstPtr& msg)
+    void cmdscanCallback(const sensor_msgs::LaserScan::ConstPtr& scan_msg)
+    {
+        ROS_INFO("RPSCAN");
+        std_msgs::Empty EmptyMsg;
+        // 1. Data type conversions (laser scan -> pointcloud2)
+        laser_geometry::LaserProjection projector;
+        sensor_msgs::PointCloud2 cloud_msg;
+        projector.projectLaser(*scan_msg, cloud_msg);
+
+//        pcl::PCLPointCloud2::Ptr temp_cloud (new pcl::PCLPointCloud2);
+//        pcl_conversions::toPCL(cloud_msg, *temp_cloud); // save cloud message to cloud2
+//        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+//        pcl::fromPCLPointCloud2(*temp_cloud, *cloud);
+
+//        // 2. Crop Point Cloud
+//        pcl::ConditionAnd<pcl::PointXYZ>::Ptr range_condition(new pcl::ConditionAnd<pcl::PointXYZ> ());
+//        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_inrange(new pcl::PointCloud<pcl::PointXYZ>); // <- cropped cloud
+        // set condition
+//        range_condition->addComparison (pcl::FieldComparison<pcl::PointXYZ>::ConstPtr (new pcl::FieldComparison<pcl::PointXYZ>("y", pcl::ComparisonOps::GT, -config_.aisle_width_)));
+//        range_condition->addComparison (pcl::FieldComparison<pcl::PointXYZ>::ConstPtr (new pcl::FieldComparison<pcl::PointXYZ>("y", pcl::ComparisonOps::LT, config_.aisle_width_)));
+//        range_condition->addComparison (pcl::FieldComparison<pcl::PointXYZ>::ConstPtr (new pcl::FieldComparison<pcl::PointXYZ>("x", pcl::ComparisonOps::LT, 0.0)));
+//        // conditional removal
+//        pcl::ConditionalRemoval<pcl::PointXYZ> condrem;
+//        condrem.setInputCloud(cloud);
+//        condrem.setCondition(range_condition);
+//        condrem.setKeepOrganized(true);
+//        condrem.filter(*cloud_inrange);
+//        if (cloud_inrange->size() == 0)
+//        {
+//            pub_lidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
+//            pub_prelidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
+//            ROS_WARN("all points are cropped");
+//            return;
+//        }
+
+//        // 3. EXTRACT LINE (RANSAC ALGORITHM)
+//        pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+//        pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+//        pcl::SACSegmentation<pcl::PointXYZ> seg;
+//        pcl::ExtractIndices<pcl::PointXYZ> extract;
+//        seg.setOptimizeCoefficients(true);
+//        seg.setModelType(pcl::SACMODEL_LINE); // <- extract model setting
+//        seg.setMethodType(pcl::SAC_RANSAC);
+//        seg.setDistanceThreshold(config_.line_thresh_); // <- threshold (line width) // 0.5
+//        seg.setInputCloud(cloud_inrange);
+//        seg.segment(*inliers, *coefficients);
+//        extract.setInputCloud(cloud_inrange);
+//        extract.setIndices(inliers);
+//        extract.setNegative(false); //<- if true, it returns point cloud except the line.
+//        extract.filter(*cloud_inrange);
+
+//        // 4. Extract Line Cluster
+//        pcl::search::KdTree<pcl::PointXYZ>::Ptr tree_cluster(new pcl::search::KdTree<pcl::PointXYZ>);
+//        tree_cluster->setInputCloud(cloud_inrange);
+//        std::vector<pcl::PointIndices> cluster_indices;
+//        pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+//        ec.setInputCloud(cloud_inrange);
+//        ec.setClusterTolerance(0.05); // <- If the two points have distance bigger than this tolerance, then points go to different clusters.
+//        ec.setMinClusterSize(30);
+//        ec.setMaxClusterSize(800);;
+//        ec.setSearchMethod(tree_cluster);
+//        ec.extract(cluster_indices);
+
+//        // extract first clustering (center cluster)
+//        int j = 0;
+//        std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin ();
+//        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+//        for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
+//        {
+//            if (j == 0) {
+//                for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
+//                {
+//                    cloud_cluster->points.push_back (cloud_inrange->points[*pit]);
+//                }
+//                cloud_cluster->width = cloud_cluster->points.size ();
+//                cloud_cluster->height = 1;
+//                cloud_cluster->is_dense = true;
+//            }
+//            j++;
+//        }
+//        if((*cloud_cluster).size() == 0)
+//        {
+//            pub_lidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
+//            pub_prelidar_fail_.publish(EmptyMsg); //TODO FAIL Pub
+//            ROS_WARN("Not enough points!");
+//            return;
+//        }
+
+//        // 5. FIND NEAREST POINT FROM THE ORIGIN ( => /nearest_point)
+//        pcl::PointCloud<pcl::PointXYZ> point_set; // Data to be published
+
+//        pcl::PointXYZ origin(0, 0, 0);
+//        pcl::KdTree<pcl::PointXYZ>::Ptr tree_(new pcl::KdTreeFLANN<pcl::PointXYZ>);
+//        tree_->setInputCloud(cloud_cluster);
+//        std::vector<int> nn_indices(1);
+//        std::vector<float> nn_dists(1);
+//        tree_->nearestKSearch(origin, 1, nn_indices, nn_dists); //<- finds the most closest sing point: save points index to "nn_indices", and distance to "nn_dists"
+//        point_set.push_back(cloud_cluster->points[nn_indices[0]]); // [0]: closest
+
+//        // 6. Calculate the Reference point
+//        float sum_x = 0;
+//        int num_points = 0;
+
+//        // Update Line min & Line max
+//        float line_start_y = 0;
+//        float line_end_y = 1000;
+//        pcl::PointCloud<pcl::PointXYZ> line_cloud;
+
+//        for (int i = 0; i < (*cloud_cluster).size(); i++)
+//        {
+//            sum_x += cloud_cluster->points[i].x;
+//            num_points ++;
+//            if (line_end_y > cloud_cluster->points[i].y)
+//                line_end_y = cloud_cluster->points[i].y;
+//            if (line_start_y < cloud_cluster->points[i].y)
+//                line_start_y = cloud_cluster->points[i].y;
+//        }
+//        pcl::PointXYZ reference (sum_x / (float)num_points, (line_start_y + line_end_y)/2, 0);//Jinsuk
+//        point_set.push_back(reference); // [1]: reference
+
+//        pcl::PointXYZ line_start_point (sum_x / (float)num_points, line_start_y, 0);
+//        pcl::PointXYZ line_end_point (sum_x / (float)num_points, line_end_y, 0);
+//        point_set.push_back(line_start_point); //[2]: line start point
+//        point_set.push_back(line_end_point); //[3]: line end point
+
+//        // Publish ROS Topics
+//        sensor_msgs::PointCloud2 points_msg;
+//        sensor_msgs::PointCloud2 points_line;
+
+//        pcl::toROSMsg((*cloud_cluster), points_line);
+//        pcl::toROSMsg(point_set, points_msg);
+//        points_line.header.frame_id = scan_msg->header.frame_id;
+//        points_msg.header.frame_id = scan_msg->header.frame_id;
+//        pub_points_.publish(points_msg);
+//        pub_line_.publish(points_line);
+
+
+//        // Command
+//        near_y_ = cloud_cluster->points[nn_indices[0]].y;
+//        ref_y_ = reference.y;
+//        ref_x_ = reference.x;
+//        line_start_y_ = line_start_point.y;
+//        line_end_y_ = line_end_point.y;
+
+
+        //        std_msgs::Empty EmptyMsg;
+        //        geometry_msgs::Twist cmd_vel;
+        //        int Mode_type;
+        //        HJ_mode_cnt++;
+
+        //        //To stop when the communication is delayed or failed
+        //        if(config_.Postech_code_)
+        //            Mode_type  = postech_mode_;
+        //        else
+        //        {
+        //            if(HJ_mode_cnt >=10) //If there is no mode subscribe, the mode stops. It should be deleted
+        //                HJ_mode_low = STOP_MODE;
+        //            Mode_type = HJ_mode_low;
+        //        }
+        //        //To interrupt mode_type, program here->.
+        //        //To operate the gmapping
+        //        if(config_.amcl_driving_ ==false)
+        //        {
+        //            Mode_type = AUTO_LIDAR_MODE;
+        //            if(!gmapping_go)
+        //                return;
+        //        }
+        //        //To operate manual mode
+        //        if(joy_driving_ || HJ_mode_low == MANUAL_MODE)
+        //            Mode_type = MANUAL_MODE;
+
+
+        //        //std::cout<<"Mode_type: "<<Mode_type<<std::endl;
+        //        if(init_call || init_cnt !=0)
+        //        {
+        //            init_call = false; //Without this, it keeps initializing due to delayed subscribe from loclizaiton node.
+        //            init_cnt++;
+        //            cmd_vel.linear.x = 0.0;
+        //            cmd_vel.linear.z = 0.0;
+        //            pub_cmd_.publish(cmd_vel);
+        //            if(init_cnt==INIT_WAIT)
+        //            {
+        //                //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+        //                //system("rosservice call /reset_odom"); //Intialize IMU
+        //                //system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
+        //            }
+        //            if(init_cnt==INIT_WAIT*8)
+        //                init_cnt =0;
+        //            return;
+        //        }
+
+        //        //// 2. Autonomous Driving
+
+        //        float y_err_local = ref_y_ - near_y_;
+        //        //std::cout<<"---------------------------ais: " << y_err_local<<std::endl;
+        //        // 2.1 Check Obstacles
+
+        //        if (config_.check_obstacles_ && (Mode_type == AUTO_LIDAR_MODE || Mode_type == AUTO_IMAGE_MODE))
+        //        {
+        //            float line_length = line_end_y_ - line_start_y_;
+        //            float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
+        //            float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
+        //            bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
+        //            // (0) Front Obstacle Update
+
+        //            //std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
+
+        //            if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 )
+        //            {
+        //                cmd_vel.linear.x = 0.0;
+        //                cmd_vel.linear.z = 0.0;
+        //                pub_cmd_.publish(cmd_vel);
+        //                std::cout<<"Front obstacle is deteced"<<std::endl;
+        //                return;
+        //            } // below  else if
+
+        //            // (1) Right Obstacle Update	(y:오른쪽이 음수)
+        //            else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 1)
+        //            {
+        //                //Start- end = length
+        //                //robot_length = 0.5m
+        //                //0.1 m + 0.1m
+        //                std::cout << "Right obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
+        //                //float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
+        //                //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
+        //                //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
+        //                y_err_local = ref_y_-config_.obs_avoidance_distance_ - near_y_;
+        //                temp_y_err_local = 1;
+        //                was_obs_in_aisle = true;
+        //                spare_length = 0;
+        //            }
+        //            // (2) Left Obstacle Update (y:왼쪽이 양수)
+        //            else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_< 1)
+        //            {
+        //                std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
+        //                //float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
+        //                //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
+        //                //                y_err_local = (obs_y_+line_start_y_)/2 - near_y_;
+        //                y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
+        //                temp_y_err_local = -1;
+        //                was_obs_in_aisle = true;
+        //                spare_length = 0;
+        //            }
+        //            // (3) After obs disappear, go further 'spare_length'
+        //            if(!is_obs_in_aisle && was_obs_in_aisle)
+        //            {
+        //                spare_length += config_.linear_vel_ * 0.1;
+        //                //y_err_local = temp_y_err_local;
+        //                if(temp_y_err_local ==1)
+        //                    y_err_local = ref_y_ - config_.obs_avoidance_distance_ - near_y_;
+        //                else if (temp_y_err_local == -1)
+        //                    y_err_local = ref_y_ + config_.obs_avoidance_distance_ - near_y_;
+        //                std::cout<< "straight foward of spare distance" <<std::endl;
+        //                if(spare_length > config_.spare_length_)
+        //                {
+        //                    spare_length = 0;
+        //                    was_obs_in_aisle = false;
+        //                    std::cout<<"spare finish"<<std::endl;
+        //                }
+        //            }
+
+        //        }
+
+
+        //        float straight_l_xerr;
+
+        //        float l_xerr,l_yerr;
+
+        //        switch(Mode_type)
+        //        {
+        //        case MANUAL_MODE:
+        //            break;
+        //        case STOP_MODE:
+        //            cmd_vel.linear.x = 0.0;
+        //            cmd_vel.linear.z = 0.0;
+        //            pub_cmd_.publish(cmd_vel);
+        //            break;
+
+        //        case AUTO_LIDAR_MODE:
+
+        //            //cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
+
+        //            cmd_vel.linear.x = config_.linear_vel_;
+        //            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+        //            pre_y_err = y_err_local;
+
+        //            //Saturation parts due to Zero's deadline from VESC
+        //            if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
+        //                cmd_vel.linear.x = config_.min_vel_;
+
+
+        //            if(cmd_vel.linear.x> config_.max_vel_)
+        //                cmd_vel.linear.x = config_.max_vel_;
+        //            else if(cmd_vel.linear.x< -config_.max_vel_)
+        //                cmd_vel.linear.x = -config_.max_vel_;
+
+        //            if(cmd_vel.angular.z> config_.max_rot_)
+        //                cmd_vel.angular.z = config_.max_rot_;
+        //            else if(cmd_vel.angular.z< -config_.max_rot_)
+        //                cmd_vel.angular.z = -config_.max_rot_;
+        //            //std::cout<<"x: "<<cmd_vel.linear.x<< ", z: " << cmd_vel.angular.z<<std::endl;
+        //            //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
+
+        //            pub_cmd_.publish(cmd_vel);
+        //            break;
+
+        //        case TURN_MODE:
+        //            if(local_data_receive)
+        //            {
+        //                local_data_receive =false;
+        //                l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
+        //                l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
+        //                //std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
+        //                l_xerr = (tan(global_r_theta_)*-global_x_err_ -global_y_err_)/(sqrt(tan(global_r_theta_)*tan(global_r_theta_)+(float)1));//new l_xerr
+
+
+        //                cmd_vel.linear.x = config_.rot_kx_;//config_.rot_kx_*l_xerr;
+        //                cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+
+        //                /*
+        //                    if(fabs(global_c_theta_ - global_c_theta_)< 0.4 || fabs(global_c_theta_ - global_c_theta_)> 2.7)
+        //                    {
+        //                        cmd_vel.linear.x = config_.rot_kx_*l_xerr;
+        //                        cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+        //                    }
+        //                    else
+        //                    {
+        //                        cmd_vel.linear.x = 0.0;
+        //                        cmd_vel.angular.z = config_.rot_ky_ *l_yerr + config_.rot_kt_ *(global_r_theta_ - global_c_theta_);
+        //                    }
+        //    */
+
+
+        //                //Saturation parts due to Zero's deadline from VESC
+        //                //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
+        //                if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
+        //                    cmd_vel.angular.z = config_.min_rot_;
+        //                else if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
+        //                    cmd_vel.angular.z = -config_.min_rot_;
+
+        //                if(cmd_vel.angular.z> config_.max_rot_)
+        //                    cmd_vel.angular.z = config_.max_rot_;
+        //                else if(cmd_vel.angular.z< -config_.max_rot_)
+        //                    cmd_vel.angular.z = -config_.max_rot_;
+        //                pub_cmd_.publish(cmd_vel);
+        //            }
+        //            break;
+
+        //        case AUTO_PRE_LIDAR_MODE:
+        //            align_cnt++;
+        //            cmd_vel.linear.x = 0.0;
+        //            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
+        //            if(cmd_vel.angular.z< config_.min_rot_ && cmd_vel.angular.z>0)//To rotate minimum speed at cw
+        //                cmd_vel.angular.z = config_.min_rot_;
+        //            else if(cmd_vel.angular.z> -config_.min_rot_ && cmd_vel.angular.z<0) //To rotate minimum speed at ccw
+        //                cmd_vel.angular.z = -config_.min_rot_;
+        //            if(cmd_vel.angular.z> config_.max_rot_)
+        //                cmd_vel.angular.z = config_.max_rot_;
+        //            else if(cmd_vel.angular.z< -config_.max_rot_)
+        //                cmd_vel.angular.z = -config_.max_rot_;
+
+        //            pub_cmd_.publish(cmd_vel);
+        //            if(y_err_local < 0.02 || align_cnt >=70 )//0.05 cm
+        //            {
+        //                align_cnt=0;
+        //                pub_prelidar_end_.publish(EmptyMsg);
+        //            }
+        //            break;
+
+        //        case DOCK_IN_MODE: //Hanjeon gives us the err of y
+        //            //            cmd_vel.linear.x = -0.1;
+        //            //            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local;
+
+        //            //            if(cmd_vel.linear.x> config_.max_vel_)
+        //            //                cmd_vel.linear.x = config_.max_vel_;
+        //            //            else if(cmd_vel.linear.x< -config_.max_vel_)
+        //            //                cmd_vel.linear.x = -config_.max_vel_;
+
+        //            //            if(cmd_vel.angular.z> config_.max_rot_)
+        //            //                cmd_vel.angular.z = config_.max_rot_;
+        //            //            else if(cmd_vel.angular.z< -config_.max_rot_)
+        //            //                cmd_vel.angular.z = -config_.max_rot_;
+
+        //            //pub_cmd_.publish(cmd_vel);
+        //            break;
+        //        case DOCK_OUT_MODE: // with RPlidar
+        //            cmd_vel.linear.x = 0.1;
+        //            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local/0.6;
+
+        //            if(cmd_vel.linear.x> config_.max_vel_)
+        //                cmd_vel.linear.x = config_.max_vel_;
+        //            else if(cmd_vel.linear.x< -config_.max_vel_)
+        //                cmd_vel.linear.x = -config_.max_vel_;
+
+        //            if(cmd_vel.angular.z> config_.max_rot_)
+        //                cmd_vel.angular.z = config_.max_rot_;
+        //            else if(cmd_vel.angular.z< -config_.max_rot_)
+        //                cmd_vel.angular.z = -config_.max_rot_;
+
+        //            pub_cmd_.publish(cmd_vel);
+
+        //            break;
+
+        //        default:
+        //            break;
+        //        }
+    }
     void set_odom(const std_msgs::Float32MultiArray::ConstPtr& pose_data)
     {
         float data_plot;
@@ -686,11 +1102,18 @@ private:
     ros::Publisher pub_prelidar_end_;
     ros::Publisher pub_docking_end_;
 
-
+    //RP
+    ros::Subscriber sub_scan_;
+    ros::Publisher pub_line_;
+    ros::Publisher pub_points_;
+    ros::Publisher pub_prelidar_fail_;
+    ros::Publisher pub_lidar_fail_;
 
     /** configuration parameters */
     typedef struct
     {
+        double line_thresh_;
+        double aisle_width_;
         double Kpx_param_;
         double Kpy_param_;
         double Kpy_param_rot_;

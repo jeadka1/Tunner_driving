@@ -48,7 +48,6 @@ add_service_files(
   RobotPose.srv
   WaypointPath.srv
   charging_done.srv
-  UpdateOdom.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -70,7 +69,7 @@ generate_messages(
 
 catkin_package(
         #  INCLUDE_DIRS include
-        LIBRARIES LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
+        LIBRARIES LocalizationNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
         CATKIN_DEPENDS nodelet roscpp sensor_msgs tf geometry_msgs fiducial_msgs pcl_conversions laser_geometry message_runtime
         DEPENDS PCL
 )
@@ -93,10 +92,6 @@ add_library(LocalizationNode src/localization_node.cpp)
 add_dependencies(LocalizationNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(LocalizationNode ${catkin_LIBRARIES})
 
-add_library(AisleDetectNode src/aisle_detect_node.cpp)
-add_dependencies(AisleDetectNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(AisleDetectNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
-
 add_library(ObstaclesNode src/obstacles_node.cpp)
 add_dependencies(ObstaclesNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ObstaclesNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
@@ -116,16 +111,15 @@ target_link_libraries(MaincommandNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 
 add_library(${PROJECT_NAME}_nodelets
   src/localization_node.cpp
-  src/aisle_detect_node.cpp
   src/obstacles_node.cpp
   src/cmd_publish_node.cpp
   src/aruco_node.cpp
   src/main_command_node.cpp)
 
-target_link_libraries(${PROJECT_NAME}_nodelets LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode)
+target_link_libraries(${PROJECT_NAME}_nodelets LocalizationNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode)
 
 
-install(TARGETS LocalizationNode AisleDetectNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
+install(TARGETS LocalizationNode ObstaclesNode CmdPublishNode ArucoNode MaincommandNode
         DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
 
 install(DIRECTORY include/${PROJECT_NAME}/

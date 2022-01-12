@@ -14,7 +14,7 @@
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/short_seoul.yaml"/-->
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/211122_mosa_in.yaml"/-->
 
-    <node pkg="rosservice" type="rosservice" name="rosservice" args="call /odom_init 0.0 0.0 0.0"/>
+
 
     <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
     <node name="amcl" pkg="amcl_pose_updater" type="amcl_pose_updater" clear_params="true" output="screen">
@@ -49,23 +49,26 @@
     
     <node if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/aisle_detect.yaml"/>
+        <param name="amcl_driving" value="true"/>
+	<remap from="/joystick" to="/joy"/>
     </node>
 
     <node if="$(arg use_obs)" pkg="nodelet" type="nodelet" name="ObstaclesNode_loader" args="load auto_driving/ObstaclesNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/obstacles.yaml"/>
     </node>
 
-    <node pkg="nodelet" type="nodelet" name="CmdPublishNode_loader" args="load auto_driving/CmdPublishNode nodelet_manager" output="screen">
+    <!--node pkg="nodelet" type="nodelet" name="CmdPublishNode_loader" args="load auto_driving/CmdPublishNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/cmd_publish.yaml"/>
         <param name="amcl_driving" value="true"/>
 	<remap from="/joystick" to="/joy"/>
-    </node>
+    </node-->
 
 <node pkg="nodelet" type="nodelet" name="Localization_loader" args="load auto_driving/LocalizationNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/localization.yaml"/>
+        <param name="amcl_driving" value="true"/>
 	<remap from="/joystick" to="/joy"/>
     </node>
-
+    <node pkg="rosservice" type="rosservice" name="rosservice" args="call /Localization_loader/odom_init 0.0 0.0 0.0"/>
     
     <!-- STATIC TF PUBLISHER -->
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_rp" args="0 0 0 3.141592 0 0 base_link laser 100" />

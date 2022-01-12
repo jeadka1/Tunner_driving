@@ -9,9 +9,8 @@
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="true"/>
     <arg name="use_static_tf" default="true"/>
-    <arg name="use_obs" default="true"/>
+    <arg name="use_obs" default="false"/>
      
-    <node pkg="rosservice" type="rosservice" name="rosservice" args="call /odom_init 0.0 0.0 0.0"/>
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/>
 
     <node if="$(arg use_rp)" name="rplidarNode"          pkg="rplidar_ros"  type="rplidarNode" output="screen">
@@ -36,20 +35,28 @@
     <!--node pkg="rostopic" type="rostopic" name="tf_listen" args="pub -r 1 /tf_listener std_msgs/Int32 0" output="screen"/-->
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     
-    <node  if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
+    <node if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/aisle_detect.yaml"/>
+        <param name="amcl_driving" value="false"/>
+	<remap from="/joystick" to="/joy"/>
     </node>
+
+    <node pkg="nodelet" type="nodelet" name="Localization_loader" args="load auto_driving/LocalizationNode nodelet_manager" output="screen">
+        <rosparam command="load" file="$(find leo_driving)/config/localization.yaml"/>
+        <param name="amcl_driving" value="false"/>
+	<remap from="/joystick" to="/joy"/>
+    </node>
+    <!--node pkg="nodelet" type="nodelet" name="CmdPublishNode_loader" args="load auto_driving/CmdPublishNode nodelet_manager" output="screen">
+        <rosparam command="load" file="$(find leo_driving)/config/cmd_publish.yaml"/>
+        <param name="amcl_driving" value="false"/>
+	<remap from="/joystick" to="/joy"/>
+    </node-->
 
     <node if="$(arg use_obs)" pkg="nodelet" type="nodelet" name="ObstaclesNode_loader" args="load auto_driving/ObstaclesNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/obstacles.yaml"/>
     </node>
 
-    <node pkg="nodelet" type="nodelet" name="CmdPublishNode_loader" args="load auto_driving/CmdPublishNode nodelet_manager" output="screen">
-        <rosparam command="load" file="$(find leo_driving)/config/cmd_publish.yaml"/>
-        <param name="amcl_driving" value="false"/>
-	<remap from="/joystick" to="/joy"/>
-    </node>
-
+    <node pkg="rosservice" type="rosservice" name="rosservice" args="call /Localization_loader/odom_init 0.0 0.0 0.0"/>
     
     <!-- STATIC TF PUBLISHER -->
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_rp" args="0 0 0 3.141592 0 0 base_link laser 100" />
