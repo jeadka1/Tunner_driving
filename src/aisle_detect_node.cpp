@@ -78,6 +78,8 @@ private:
         nhp.param("Kpx_param", config_.Kpx_param_, 2.0);
         nhp.param("Kpy_param", config_.Kpy_param_, 1.1);
         nhp.param("Kpy_param_rot", config_.Kpy_param_rot_, 0.01);
+        nhp.param("Kpy_param_boundary_gain", config_.Kpy_param_boundary_gain_, 0.05);
+        nhp.param("tunnel_gain_boundary", config_.tunnel_gain_boundary_, 0.01);
         nhp.param("linear_vel", config_.linear_vel_, 0.0);
         nhp.param("robot_width", config_.robot_width_, 0.45);
         nhp.param("line_width_min", config_.line_width_min_, 0.7);
@@ -112,6 +114,8 @@ private:
         sub_joy_ = nhp.subscribe<sensor_msgs::Joy>("/joystick", 1, &AisleDetectNode::joyCallback, this);
         sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &AisleDetectNode::localDataCallback, this);
         sub_mode_call_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &AisleDetectNode::modeCallback, this);
+        sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &AisleDetectNode::SpeedCallback, this);
+
 
         pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
         pub_docking_end_ = nhp.advertise<std_msgs::Int32> ("/joy_from_cmd", 1); // Temperary To finish with joystick
@@ -242,6 +246,8 @@ private:
         point_set.push_back(line_start_point); //[2]: line start point
         point_set.push_back(line_end_point); //[3]: line end point
 
+
+
         // Publish ROS Topics
         sensor_msgs::PointCloud2 points_msg;
         sensor_msgs::PointCloud2 points_line;
@@ -262,6 +268,10 @@ private:
         geometry_msgs::Twist cmd_vel;
         int Mode_type;
         HJ_mode_cnt++;
+
+        //cout<<"1. reference = "<<reference<<endl;
+        //cout<<"2. near_point_y = "<<near_y_<<endl;
+
 
         //To stop when the communication is delayed or failed
         if(config_.Postech_code_)
@@ -297,9 +307,17 @@ private:
             {
                 //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
                 //system("rosservice call /reset_odom"); //Intialize IMU
-                //system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
+                system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
             }
-            if(init_cnt==INIT_WAIT*8)
+            else if(init_cnt==INIT_WAIT*3)
+            {
+                system("rosservice call /reset_odom"); //Intialize IMU
+            }
+            else if(init_cnt==INIT_WAIT*6)
+            {
+                system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+            }
+            if(init_cnt==INIT_WAIT*12)
                 init_cnt =0;
             return;
         }
@@ -307,6 +325,7 @@ private:
         //// 2. Autonomous Driving
 
         float y_err_local = ref_y_ - near_y_;
+        cmd_vel.linear.x = config_.linear_vel_;
         //std::cout<<"---------------------------ais: " << y_err_local<<std::endl;
         // 2.1 Check Obstacles
 
@@ -332,6 +351,7 @@ private:
             // (1) Right Obstacle Update	(y:오른쪽이 음수)
             else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 1)
             {
+                cmd_vel.linear.x =0.2;
                 //Start- end = length
                 //robot_length = 0.5m
                 //0.1 m + 0.1m
@@ -347,6 +367,7 @@ private:
             // (2) Left Obstacle Update (y:왼쪽이 양수)
             else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_< 1)
             {
+                cmd_vel.linear.x =0.2;
                 std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
                 //float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
                 //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
@@ -359,7 +380,8 @@ private:
             // (3) After obs disappear, go further 'spare_length'
             if(!is_obs_in_aisle && was_obs_in_aisle)
             {
-                spare_length += config_.linear_vel_ * 0.1;
+                cmd_vel.linear.x =0.2;
+                spare_length += cmd_vel.linear.x * 0.1;
                 //y_err_local = temp_y_err_local;
                 if(temp_y_err_local ==1)
                     y_err_local = ref_y_ - config_.obs_avoidance_distance_ - near_y_;
@@ -371,6 +393,7 @@ private:
                     spare_length = 0;
                     was_obs_in_aisle = false;
                     std::cout<<"spare finish"<<std::endl;
+                    cmd_vel.linear.x = config_.linear_vel_;
                 }
             }
 
@@ -380,6 +403,7 @@ private:
         float straight_l_xerr;
 
         float l_xerr,l_yerr;
+        float tunnel_angle_diff;
 
         switch(Mode_type)
         {
@@ -395,9 +419,19 @@ private:
 
             //cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
 
-            cmd_vel.linear.x = config_.linear_vel_;
-            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
-            pre_y_err = y_err_local;
+            //previous controller
+//            if(y_err_local<config_.tunnel_gain_boundary_)
+//                cmd_vel.angular.z = -config_.Kpy_param_boundary_gain_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+//            else
+//                cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+//            pre_y_err = y_err_local;
+
+            //Tan err controller
+            tunnel_angle_diff = atan2(y_err_local,0.2);
+            //cmd_vel.linear.x = config_.linear_vel_;
+            cmd_vel.angular.z= -config_.Kpy_param_*tunnel_angle_diff - config_.Kpy_param_rot_*(tunnel_angle_diff - pre_y_err)*10; // rad
+//            ROS_INFO("tunnel_angle: %f, cmd_z %f",atan2(y_err_local,0.2),cmd_vel.angular.z);
+            pre_y_err = tunnel_angle_diff;
 
             //Saturation parts due to Zero's deadline from VESC
             if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
@@ -475,6 +509,7 @@ private:
                 cmd_vel.angular.z = -config_.max_rot_;
 
             pub_cmd_.publish(cmd_vel);
+
             if(y_err_local < 0.02 || align_cnt >=70 )//0.05 cm
             {
                 align_cnt=0;
@@ -514,11 +549,13 @@ private:
 
             pub_cmd_.publish(cmd_vel);
 
+
             break;
 
         default:
             break;
         }
+        //cout<<"3. cmd_vel = "<<cmd_vel<<endl;
 
     }
 
@@ -633,6 +670,8 @@ private:
         HJ_mode_low = Mode_value->data;
         HJ_mode_cnt =0;
     }
+
+
 private:
     // Publisher & Subscriber
     ros::Subscriber sub_scan_;
@@ -716,6 +755,8 @@ private:
         double Kpx_param_;
         double Kpy_param_;
         double Kpy_param_rot_;
+        double Kpy_param_boundary_gain_;
+        double tunnel_gain_boundary_;
         double linear_vel_;
         double robot_width_;
         double obs_coefficient_;

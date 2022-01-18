@@ -132,6 +132,8 @@ private:
         nhp.param("Kpx_param", config_.Kpx_param_, 2.0);
         nhp.param("Kpy_param", config_.Kpy_param_, 1.1);
         nhp.param("Kpy_param_rot", config_.Kpy_param_rot_, 0.01);
+        nhp.param("Kpy_param_boundary_gain", config_.Kpy_param_boundary_gain_, 0.01);
+        nhp.param("tunnel_gain_boundary", config_.tunnel_gain_boundary_, 0.01);
         nhp.param("linear_vel", config_.linear_vel_, 0.0);
         nhp.param("robot_width", config_.robot_width_, 0.45);
         nhp.param("line_width_min", config_.line_width_min_, 0.7);
@@ -444,9 +446,9 @@ private:
             pub_cmd_.publish(cmd_vel);
             if(init_cnt==INIT_WAIT)
             {
-                //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
-                //system("rosservice call /reset_odom"); //Intialize IMU
-                //system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
+                system("rosservice call /Localization_loader/odom_init 0.0 0.0 0.0"); //Intialize Encoder
+                system("rosservice call /reset_odom"); //Intialize IMU
+                system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
             }
             if(init_cnt==INIT_WAIT*8)
                 init_cnt =0;
@@ -545,8 +547,17 @@ private:
             //cmd_vel.linear.x = config_.linear_vel_*straight_l_xerr; // To stop slowly when arriving at the point
 
             cmd_vel.linear.x = config_.linear_vel_;
-            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+
+            //Previous controller
+//            if(y_err_local<config_.tunnel_gain_boundary_)
+//                cmd_vel.angular.z = -config_.Kpy_param_boundary_gain_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+//            else
+                cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
             pre_y_err = y_err_local;
+            //Tan err
+//            cmd_vel.angular.z= config_.Kpy_param_*atan2(y_err_local,0.2); // rad
+//            ROS_INFO("tunnel_angle: %f, cmd_z %f",cmd_vel.angular.z,atan2(y_err_local,0.2));
+
 
             //Saturation parts due to Zero's deadline from VESC
             if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
@@ -662,6 +673,7 @@ private:
                 cmd_vel.angular.z = -config_.max_rot_;
 
             pub_cmd_.publish(cmd_vel);
+            ROS_INFO("Lidar docking out mode");
 
             break;
 
@@ -694,6 +706,8 @@ private:
         double Kpx_param_;
         double Kpy_param_;
         double Kpy_param_rot_;
+        double Kpy_param_boundary_gain_;
+        double tunnel_gain_boundary_;
         double linear_vel_;
         double robot_width_;
         double obs_coefficient_;

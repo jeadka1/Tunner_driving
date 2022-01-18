@@ -1,8 +1,13 @@
 line_thresh: 0.5 #0.01
 aisle_width: 0.6 #0.6
+
 Kpx_param: 2.0
-Kpy_param: 3.5 #3.5 for tunnel , 1.5:for straight test , 3.5 for docking
-Kpy_param_rot: 0.1 #0.01
+Kpy_param: 1.8 #3.5 for tunnel , 1.5:for straight test , 3.5 for docking
+Kpy_param_rot: 0.0 #0.01
+
+tunnel_gain_boundary_: 0.05 # 0.05 [m]
+Kpy_param_boundary_gain: 7.0 #bigger Kpy_param 
+
 linear_vel: 0.3 #0.1
 robot_width: 0.7 #0.8
 obs_coefficient: 0.5

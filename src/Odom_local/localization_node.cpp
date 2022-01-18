@@ -21,9 +21,6 @@
 #include "nav_msgs/Odometry.h"
 #include "time.h"
 
-#include <iostream>
-#include <fstream>
-
 #include <leo_driving/charging_done.h>
 #include <leo_driving/PlotMsg.h>
 #include <leo_driving/UpdateOdom.h>
@@ -87,27 +84,34 @@ private:
         sub_joy_ = nhp.subscribe<std_msgs::Int32>("/joy_from_cmd", 10, &LocalizationNode::DockingCallback, this); // Joystick data from cmd_node
 
 
+        if(config_.amcl_driving_==true)
+        {
+            sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);//Clicked point from RVIZ
+            sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
+            sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
+            sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
+            sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
 
-        sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);//Clicked point from RVIZ
-        sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
-        sub_pose_lio_ = nhp.subscribe<nav_msgs::Odometry>("/localization", 10, &LocalizationNode::Update3dposeCallback, this);//fast-lio pose
-        sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
-        sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
-        sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
-
-        sub_mode_decision_ = nhp.subscribe<std_msgs::Int32>("/Mode_Decision", 1, &LocalizationNode::ModedecisionCallback, this);//To jump behavior_cnd
-        //sub_QRinit_ = nhp.subscribe("/QR_TEST", 1, &LocalizationNode::QRtestCallback, this); //While HJ_mode==1 or 2, the mode is changed to another HJ_mode ==2 or 1
-        pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10);//To send to robot-station or Hanjeon
-        //pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10); //To send to robot-station or Hanjeon --> not gonna use
-        pub_log_data_= nhp.advertise<leo_driving::PlotMsg>("/PlotMsg_data", 10); //To save the data to plot
-        pub_mode_call_= nhp.advertise<std_msgs::Int32>("/mode/low", 10); //To use Dock in wiht Hanjeon
+            sub_mode_decision_ = nhp.subscribe<std_msgs::Int32>("/Mode_Decision", 1, &LocalizationNode::ModedecisionCallback, this);//To jump behavior_cnd
+            //sub_QRinit_ = nhp.subscribe("/QR_TEST", 1, &LocalizationNode::QRtestCallback, this); //While HJ_mode==1 or 2, the mode is changed to another HJ_mode ==2 or 1
+            pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10);//To send to robot-station or Hanjeon
+            //pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10); //To send to robot-station or Hanjeon --> not gonna use
+            pub_log_data_= nhp.advertise<leo_driving::PlotMsg>("/PlotMsg_data", 10); //To save the data to plot
+            pub_mode_call_= nhp.advertise<std_msgs::Int32>("/mode/low", 10); //To use Dock in wiht Hanjeon
+        }
         //	sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
 
         //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);//QR fiducital_area detection
 
 
+//odom from roverrovertics_ros1 file
+        sub_odom_ = nhp.subscribe("/robot_odom", 50, &LocalizationNode::RobotOdomCallback, this);
+        robot_odom_publisher_ = nhp.advertise<nav_msgs::Odometry>("/odom", 50);
 
-        sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this); //TODO Docking done from robot-station
+
+        initial_pos_subscriber_ = nhp.advertiseService("odom_init", &LocalizationNode::odominit, this);
+
+        //sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this); //TODO Docking done from robot-station
 
         //pcw for Tunnel pose
         pub_for_test_QR_local = nhp.advertise<geometry_msgs::Point>("Tunnel_pose", 10); //To communicate with cmd_node
@@ -115,13 +119,7 @@ private:
 
         pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); //To communicate with cmd_node
 
-        //Event : pcw
-        //open path file
-        ifstream file("/home/cocel/mapping_ws/src/FAST_LIO/PCD/path.csv");
-        if(file.fail()){
-            cout<<"[err] cannot open path file"<<endl;
-        }
-
+        \
     }
 
 
@@ -168,18 +166,6 @@ private:
         current_pose = *amcl_pose_msg;
         //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
     }
-
-    void Update3dposeCallback(const nav_msgs::Odometry::ConstPtr& lio_pose_msg)
-    {
-        geometry_msgs::PoseWithCovarianceStamped pose_stamped;
-        pose_stamped.header = lio_pose_msg->header;
-        pose_stamped.pose = lio_pose_msg->pose;
-        pub_robot_pose_.publish(pose_stamped);
-        current_pose = pose_stamped;
-        //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
-    }
-
-
     void poseCallback(const std_msgs::Int32::ConstPtr &empty_pose_msg)
     {
         if(FIRST_START_FLAG==true)
@@ -287,7 +273,6 @@ private:
         m.getRPY(roll, pitch, yaw);
         g_x_err= global_x_err;
         g_y_err= global_y_err;
-
 
         g_ctheta = (float) yaw;//TODO for straight control, have to change atan2
         //check once
@@ -419,11 +404,11 @@ private:
                 init_start_ = false;
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction =1;
-                //                driving with AMCL pose
-                //                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
-                //                    Next_step = true;
-                //                    ROS_INFO("Tunnel POse STOP !!!!");
-                //                }
+//                driving with AMCL pose
+//                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+//                    Next_step = true;
+//                    ROS_INFO("Tunnel POse STOP !!!!");
+//                }
                 if(Next_step||global_dist_err < config_.global_dist_boundary_)
                 {
                     Next_step=false;
@@ -462,7 +447,7 @@ private:
                     else if(global_ang_err < -M_PI)
                         global_ang_err += 2*M_PI;
 
-                    //                    driving Tunnel pose
+//                    driving Tunnel pose
                     if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
                         Next_step = true;
                         ROS_INFO("Tunnel POse STOP !!!!");
@@ -487,12 +472,12 @@ private:
             case 2: //moving back to home
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction  = -1;
-                //                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
-                //                    Next_step = true;
-                //                    ROS_INFO("Tunnel POse STOP !!!!");
-                //                }
+//                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
+//                    Next_step = true;
+//                    ROS_INFO("Tunnel POse STOP !!!!");
+//                }
                 if(Next_step||global_dist_err < config_.global_dist_boundary_ )
-                    /* //To rotate with QR. It should be changed with line color detection
+/* //To rotate with QR. It should be changed with line color detection
 //                if(fid_area >=QR_DISTANCE && fid_ID == QR_home)
 //                {
 //                    if(home_arrival_flag)
@@ -563,7 +548,7 @@ private:
 
             case 4:// docking in :
                 postech_mode = DOCK_IN_MODE;//moving
-                mobile_direction = 1;
+		mobile_direction = 1;
                 if(Joy_mode==false)
                 {
                     mode_dockin.data = 4;
@@ -575,58 +560,67 @@ private:
                     pub_mode_call_.publish(mode_dockin);
                 }
 
-                if(Next_step||Charging_done_flag) //TODO
+                if(Next_step) //TODO
                 {
                     mode_dockin.data = 0;
                     pub_mode_call_.publish(mode_dockin);//To stop dock in.
                     Next_step =false;
-                    Charging_done_flag = 0;
                     behavior_cnt++;
                     postech_mode = STOP_MODE;
                 }
                 break;
 
-                //            case 5://wait : before resservice call
-                //                postech_mode = STOP_MODE;
-                //                if(Next_step||Charging_done_flag)//rosserive call
-                //                {
-                //                    Next_step=false;
-                //                    behavior_cnt++;
-                //                    postech_mode = STOP_MODE;
+//            case 5://wait : before resservice call
+//                postech_mode = STOP_MODE;
+//                if(Next_step||Charging_done_flag)//rosserive call
+//                {
+//                    Next_step=false;
+//                    behavior_cnt++;
+//                    postech_mode = STOP_MODE;
 
-                //                    Charging_done_flag =0;
-                //                }
-                //                break;
+//                    Charging_done_flag =0;
+//                }
+//                break;
 
             case 5://dokcing_out : rostopic pub ending_charging
                 mobile_direction =1;
-                if(docking_out_flag)
+		if(docking_out_flag)
+		{
+			docking_out_flag = false;
+			init_start_=true;
+			tunnel_pose = 0;
+                }
+		else
+		{
+			init_start_=false;
+		}
+		postech_mode = DOCK_OUT_MODE;
+
+//                camera docking out
+/*              camera_on_cnt++;
+                if(camera_on_cnt>20)
                 {
-                    docking_out_flag = false;
-                    init_start_=true;
-                    tunnel_pose = 0;
+                    postech_mode = MANUAL_MODE;
+                    if(Joy_mode==false)
+                    {
+                        //only camera dock out
+                        mode_dockin.data = 5;
+                        pub_mode_call_.publish(mode_dockin);
+                    }
+                    else if(Joy_mode==true) //To stop dock in node
+                    {
+                        mode_dockin.data = 0;
+                        pub_mode_call_.publish(mode_dockin);
+                    }
                 }
                 else
                 {
-                    init_start_=false;
+                    std::cout<<  "RP Docking out: " <<std::endl;
+                    postech_mode = DOCK_OUT_MODE;
                 }
-                //Lidar docking
-//                postech_mode = DOCK_OUT_MODE;
+*/
 
-//             camera docking out
-                if(Joy_mode==false)
-                {
-                    mode_dockin.data = 5;
-                    pub_mode_call_.publish(mode_dockin);
-                }
-                else if(Joy_mode==true) //To stop dock out node
-                {
-                    mode_dockin.data = 0;
-                    pub_mode_call_.publish(mode_dockin);
-                }
-
-
-                //                Driving with AMCL
+//                Driving with AMCL
                 /*if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
                     Next_step = true;
                     ROS_INFO("Tunnel POse STOP !!!!");
@@ -634,12 +628,12 @@ private:
                 if(Next_step|| global_dist_err<config_.global_dist_boundary_)// To use AMCL pose probably
                 {
                     mode_dockin.data = 0;
-                    pub_mode_call_.publish(mode_dockin);//To stop dock out
+                    pub_mode_call_.publish(mode_dockin);//To stop dock in.
                     Next_step=false;
                     behavior_cnt=0;
                     postech_mode = STOP_MODE;
                     //init_start_ = true;
-                    docking_out_flag = true;
+		    docking_out_flag = true;
                     //goal_index_ ++;
                     camera_on_cnt=0;
                 }
@@ -1023,7 +1017,6 @@ private:
 private:
     ros::Subscriber sub_joy_;
     ros::Subscriber sub_pose_;
-    ros::Subscriber sub_pose_lio_;
     ros::Subscriber sub_pose_driving_;
     ros::Subscriber sub_goal_;
     ros::Subscriber sub_front_camera;
@@ -1032,13 +1025,15 @@ private:
     ros::Subscriber sub_area_;
     ros::Subscriber sub_mode_;
     ros::Subscriber sub_QRinit_;
-
+    ros::Subscriber sub_odom_;
+    ros::Publisher robot_odom_publisher_;
 
     ros::Subscriber sub_predone_;
     ros::Subscriber sub_mode_decision_;
     ros::Subscriber sub_pose_dt_from_linearvel; //pcw for QR local
 
     ros::ServiceServer sub_docking_done_;
+    ros::ServiceServer initial_pos_subscriber_;
 
     ros::Publisher pub_localization_;
     ros::Publisher pub_robot_pose_;
@@ -1102,17 +1097,6 @@ private:
     double encoder_angular = 0;
 
     unsigned int camera_on_cnt =0;
-
-    //Event : pcw
-//    struct map_range{
-//      double start_x_;
-//      double start_y_;
-//      double end_x_;
-//      double end_y_;
-
-//      int section_;
-//    };
-//    vector<map_range> map_section;
 
     //odom publish
     double odom_x=0;
@@ -1231,7 +1215,55 @@ void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odo
     pub_for_test_QR_local.publish(tunnel_pos_pub);
 
 
+    //odom
+    nav_msgs::Odometry odom_msg;
+    tf2::Quaternion q_new;
 
+    if(odom_update==true)
+    {
+        odom_update =false;
+        odom_x = update_x;
+        odom_y = update_y;
+        odom_theta = update_theta;
+    }
+    if(odom_init_flag)
+    {
+        odom_init_flag =false;
+
+        odom_x = 0.0;//update_x;
+        odom_y = 0.0;//update_y;
+        odom_theta = 0.0;//update_theta;
+    }
+
+    //theta = theta +  data.angular_vel * dt;//enc_theta_ratio_;
+    odom_theta = odom_theta +  encoder_angular * dt*2/3;//enc_theta_ratio_;
+
+    if(odom_theta > 3.141592)
+        odom_theta -= 2*3.141592;
+    if(odom_theta< -3.141592)
+        odom_theta += 2*3.141592;
+
+    odom_x = odom_x + odom_msgs->twist.twist.linear.x * cos(odom_theta) * dt;
+    odom_y = odom_y + odom_msgs->twist.twist.linear.x * sin(odom_theta) * dt;
+
+
+    q_new.setRPY(0, 0, odom_theta);
+    tf2::convert(q_new, odom_msg.pose.pose.orientation);
+
+    odom_msg.header.stamp = ros::Time::now();
+    odom_msg.header.frame_id = "odom";
+    odom_msg.child_frame_id = "base_link";
+
+    odom_msg.twist.twist.linear.x = odom_msgs->twist.twist.linear.x;
+    odom_msg.twist.twist.angular.z = encoder_angular;
+    odom_msg.pose.pose.position.x = odom_x;
+    odom_msg.pose.pose.position.y = odom_y;
+    odom_msg.pose.pose.position.z = 0.0;
+    odom_msg.pose.pose.orientation.x = q_new.x();
+    odom_msg.pose.pose.orientation.y = q_new.y();
+    odom_msg.pose.pose.orientation.z = q_new.z();//
+    odom_msg.pose.pose.orientation.w = q_new.w();//
+    robot_odom_publisher_.publish(odom_msg);
 }
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);
