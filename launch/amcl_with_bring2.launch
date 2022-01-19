@@ -4,9 +4,7 @@
     <arg name="use_rp" default="true"/>
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="true"/>
-    <arg name="use_postech_pos" default="false"/>
     <arg name="use_static_tf" default="true"/>
-    <arg name="use_mode" default="false"/> <!-- not gonna use-->
     <arg name="use_obs" default="true"/>
 
     <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/docking_test.yaml"/--><!-- 2nd black dock -->
@@ -19,6 +17,8 @@
     <node pkg="rosservice" type="rosservice" name="rosservice" args="call /odom_init 0.0 0.0 0.0"/>
 
     <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+    <!--include file="$(find fast_lio)/launch/localization_velodyne.launch" /-->
+ 
     <!--node name="amcl" pkg="amcl_pose_updater" type="amcl_pose_updater" clear_params="true" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/amcl.yaml"/>
     </node-->
@@ -48,7 +48,6 @@
     
     <!-- LEO_DRIVING PACKAGE-->
     <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /cmd_publish std_msgs/Int32 0" output="screen"/>
-    <node if="$(arg use_mode)" pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /mode/low std_msgs/Int32 0" output="screen"/>
     <node pkg="nodelet" type="nodelet" name="nodelet_manager"  args="manager" output="screen"/>
     
     <node if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">

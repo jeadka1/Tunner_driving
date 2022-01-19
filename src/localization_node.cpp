@@ -23,6 +23,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <vector>
 
 #include <leo_driving/charging_done.h>
 #include <leo_driving/PlotMsg.h>
@@ -55,6 +56,7 @@ enum MODE_{
     TURN_MODE,
 };
 
+using namespace std;
 
 namespace auto_driving {
 
@@ -89,11 +91,14 @@ private:
 
 
         sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::setGoal, this);//Clicked point from RVIZ
+        sub_event_end_ = nhp.subscribe<std_msgs::Empty>("/event_end", 1, &LocalizationNode::EventEndCallback, this); //Event : pcw
         sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
         sub_pose_lio_ = nhp.subscribe<nav_msgs::Odometry>("/localization", 10, &LocalizationNode::Update3dposeCallback, this);//fast-lio pose
         sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
         sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
         sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
+
+        sub_camera_line_end_ = nhp.subscribe<std_msgs::Empty>("/camera_noline", 1, &LocalizationNode::CameraEndCallback, this);
 
         sub_mode_decision_ = nhp.subscribe<std_msgs::Int32>("/Mode_Decision", 1, &LocalizationNode::ModedecisionCallback, this);//To jump behavior_cnd
         //sub_QRinit_ = nhp.subscribe("/QR_TEST", 1, &LocalizationNode::QRtestCallback, this); //While HJ_mode==1 or 2, the mode is changed to another HJ_mode ==2 or 1
@@ -114,13 +119,6 @@ private:
         //
 
         pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); //To communicate with cmd_node
-
-        //Event : pcw
-        //open path file
-        ifstream file("/home/cocel/mapping_ws/src/FAST_LIO/PCD/path.csv");
-        if(file.fail()){
-            cout<<"[err] cannot open path file"<<endl;
-        }
 
     }
 
@@ -152,15 +150,32 @@ private:
     }
 
 
-
-    void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg)
-    {
+    void CameraEndCallback(const std_msgs::Empty::ConstPtr &msg){
+        Camera_noline_flag = true;
+    }
+    void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg){
+        //need to sort list
         ROS_INFO("%d th goal is set", goal_count_);
-        //ROS_INFO("x: %d, y: %d", click_msg.pose.position.x, click_msg.pose.position.y);
-        goal_set_.clear();
-        goal_set_.push_back(*click_msg);
-        goal_count_ ++;
-        new_goal_flag=true; //TODO When the goal is set to basic goal, this parameter should be 'false'
+
+        event_goal_set_[goal_count_++] = *click_msg;
+
+        if(goal_count_ > 1) {
+            goal_count_ = 0;
+            event_flag=true; //TODO When the goal is set to basic goal, this parameter should be 'false'
+            goal_status_changed = true;
+            //event for test
+            event_goal_set_[0].pose.position.x = 1.0;
+            event_goal_set_[0].pose.position.y = 0.0;
+            event_goal_set_[1].pose.position.x = 2.0;
+            event_goal_set_[1].pose.position.y = 0.0;
+        }
+    }
+    void EventEndCallback(const std_msgs::Empty::ConstPtr &msg){ //Event : pcw
+        event_flag = false;
+        goal_status_changed = true;
+        event_end_flag = true;
+        idx_start_goal = 0;
+        cout<<"#####################End event!!!!!!####################"<<endl;
     }
     void UpdateposeCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& amcl_pose_msg)
     {
@@ -179,6 +194,110 @@ private:
         //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
     }
 
+    //Event : pcw
+    //Read csv file===============================================
+    void remove_spaces(char* s) {
+        const char* d = s;
+        do {
+            while (*d == ' ') {
+                ++d;
+            }
+        } while (*s++ = *d++);
+    }
+    struct csv_data{
+        char s[2][1024];
+    };
+    void getfield(char* line, csv_data *d, int end_idx){
+        int idx = 0;
+        char *token = strtok(line, ",");
+        do
+        {
+            //printf("token: %s\n", token);
+            strcpy(d->s[idx++], token);
+        }
+        while ( idx != end_idx && (token = strtok(NULL, ",")));
+    }
+    void ReadCSV(){
+        FILE* stream = fopen("/home/cocel/mapping_ws/src/FAST_LIO/PCD/path011922_14_54.csv", "r");
+
+        char line[1024];
+        csv_data d;
+        while (fgets(line, 1024, stream)){
+            remove_spaces(line);
+
+            char *tmp = strdup(line);
+            getfield(tmp, &d, 2);
+
+            geometry_msgs::PoseStamped position;
+            position.pose.position.x = stof(d.s[0]);
+            position.pose.position.y = stof(d.s[1]);
+            map_data.push_back(position);
+            free(tmp);
+        }
+
+        //cout map_data
+
+        //        for(int i = 0; i < map_data.size(); i++){
+        //            cout<<"map_data["<<i<<"] = "<<map_data[i]<<endl;
+        //        }
+    }
+
+    //Event======================================================
+    int FindIdx(geometry_msgs::PoseStamped pos_){
+        vector<int> idx;
+        double smallest_idx = 0;
+        double x = pos_.pose.position.x;
+        double y = pos_.pose.position.y;
+        for(int i = 0; i < map_data.size()-1; i++){
+            if((x <= map_data[i].pose.position.x && x > map_data[i+1].pose.position.x) ||
+                    (x > map_data[i].pose.position.x && x <= map_data[i+1].pose.position.x)){
+                idx.push_back(i);
+            }
+        }
+        for(int i = 0; i < idx.size(); i++){
+            double err = 1000;
+            double temp_err = fabs(y -map_data[idx[i]].pose.position.y);
+            if(temp_err < err){
+                err = temp_err;
+                smallest_idx = idx[i];
+            }
+        }
+        //        if(idx == 0){
+        //            double CalcPosErr(map_data[0],pos_)
+        //        }
+        return smallest_idx;
+    }
+
+    double CalcPosErr(geometry_msgs::PoseStamped pos1, geometry_msgs::PoseStamped pos2){
+        double err_x = pos1.pose.position.x - pos2.pose.position.x;
+        double err_y = pos1.pose.position.y - pos2.pose.position.y;
+
+        return sqrt(pow(err_x,2)+pow(err_y,2));
+    }
+
+    bool NeedTurn(geometry_msgs::PoseStamped event_goal_pos, geometry_msgs::PoseStamped previous_goal_pos, geometry_msgs::PoseStamped current_pos){
+        bool need_turn = false;
+        int idx_event_goal = FindIdx(event_goal_pos);
+        int idx_previous_goal = FindIdx(previous_goal_pos);
+        int idx_current_pos = FindIdx(current_pos);
+
+        //need to erase
+        //        cout<<"idx_event_goal    = "<<idx_event_goal<<endl;
+        //        cout<<"idx_previous_goal = "<<idx_previous_goal<<endl;
+        //        cout<<"idx_current_pos   = "<<idx_current_pos<<endl;
+
+        if(!((idx_event_goal > idx_current_pos && idx_event_goal <= idx_previous_goal) ||
+             (idx_event_goal >= idx_previous_goal && idx_event_goal < idx_current_pos))){
+            need_turn = true;
+        }
+        if(idx_event_goal == idx_current_pos){
+            if(CalcPosErr(event_goal_pos, previous_goal_pos) > CalcPosErr(current_pos, previous_goal_pos)){
+                need_turn = true;
+            }
+        }
+        return need_turn;
+    }
+
 
     void poseCallback(const std_msgs::Int32::ConstPtr &empty_pose_msg)
     {
@@ -188,8 +307,27 @@ private:
             FIRST_START_FLAG=false;
             if(config_.HJ_MODE_==1)//To start from Docking station
             {
-                behavior_cnt =5;
-                ROS_INFO("cnt=5 ");
+                behavior_cnt =6; //For case 5 or case 6
+                ROS_INFO("cnt=6 ");
+                ////--------------------------pcw event goal
+                //Event : pcw
+                ReadCSV();
+                geometry_msgs::PoseStamped goal;
+                goal.pose.position.x = config_.Main_start_x_;
+                goal.pose.position.y = config_.Main_start_y_;
+                main_goal_set_[0] = goal;
+                cout<<"main_goal_set_[0].pose.position.x = "<<main_goal_set_[0].pose.position.x<<endl;
+                cout<<"main_goal_set_[0].pose.position.y = "<<main_goal_set_[0].pose.position.y<<endl;
+                goal.pose.position.x = config_.Main_goal_x_;
+                goal.pose.position.y = config_.Main_goal_y_;
+                main_goal_set_[1] = goal;
+                cout<<"main_goal_set_[1].pose.position.x = "<<main_goal_set_[1].pose.position.x<<endl;
+                cout<<"main_goal_set_[1].pose.position.y = "<<main_goal_set_[1].pose.position.y<<endl;
+
+
+                current_goal_set_[0] = main_goal_set_[0];
+                current_goal_set_[1] = main_goal_set_[1];
+                ////--------------------------pcw event goal
             }
             else //To start iterative driving
             {
@@ -227,28 +365,91 @@ private:
         else
         {
             ROS_INFO_ONCE("Goal is set");
-            goal_count_ =2;
-            if(behavior_cnt==2 ||  behavior_cnt ==5)
-            {
-                current_goal_.pose.position.x = config_.Main_start_x_;
-                current_goal_.pose.position.y = config_.Main_start_y_;
-                Tunnel_reference = config_.tunnel_start_;
-            }
-            else if(behavior_cnt ==0)
-            {
-                if(new_goal_flag)
-                {
-                    current_goal_.pose.position.x = goal_set_[0].pose.position.x;
-                    current_goal_.pose.position.y = goal_set_[0].pose.position.y;
-                    Tunnel_reference = config_.tunnel_goal_; //TODO to change from event goal position
+            geometry_msgs::PoseStamped current_pos;
+
+            //--------------------------Jinsuk without event goal
+            //            if(behavior_cnt==2 ||  behavior_cnt == 6){ //Main_start // For case 5 or case 6
+            //                current_goal_.pose.position.x = config_.Main_start_x_;
+            //                current_goal_.pose.position.y = config_.Main_start_y_;
+            //            }
+            //            else if(behavior_cnt ==0){ // Main_goal
+            //                current_goal_.pose.position.x = config_.Main_goal_x_;
+            //                current_goal_.pose.position.y = config_.Main_goal_y_;
+            //            }
+            ////--------------------------pcw event goal
+
+            static int previous_behavior_cnt = 6;
+            cout<<"goal_count_ = "<<goal_count_<<endl;
+            cout<<"(1) behavior_cnt        = "<<behavior_cnt<<endl;
+            cout<<"(2) goal_status_changed = "<<goal_status_changed<<endl;
+            cout<<"(3) idx                 = "<<idx_start_goal<<endl;
+
+
+            if(goal_status_changed){
+                if(event_flag){
+                    current_goal_set_[0] = event_goal_set_[0];
+                    current_goal_set_[1] = event_goal_set_[1];
                 }
-                else
-                {
-                    current_goal_.pose.position.x = config_.Main_goal_x_;
-                    current_goal_.pose.position.y = config_.Main_goal_y_;
-                    Tunnel_reference = config_.tunnel_goal_;
+                else{
+                    current_goal_set_[0] = main_goal_set_[0];
+                    current_goal_set_[1] = main_goal_set_[1];
+                }
+                current_pos.pose.position.x = pose_msg.pose.pose.position.x;
+                current_pos.pose.position.y = pose_msg.pose.pose.position.y;
+            }
+
+            if(event_end_flag){
+                behavior_cnt = 2;
+                idx_start_goal = 0;
+                if(NeedTurn(current_goal_set_[idx_start_goal],current_goal_,current_pos)){
+                    behavior_cnt = 1;
+                    idx_start_goal = 1;
+                }
+
+                current_goal_.pose.position.x = current_goal_set_[idx_start_goal].pose.position.x;
+                current_goal_.pose.position.y = current_goal_set_[idx_start_goal].pose.position.y;
+
+                event_end_flag = false;
+            }
+            else{
+                if(behavior_cnt==2){ //Main_start // For case 5 or case 6
+                    if(goal_status_changed && NeedTurn(current_goal_set_[idx_start_goal],current_goal_,current_pos)){
+                        if(NeedTurn(current_goal_set_[idx_start_goal],current_goal_,current_pos)){
+                            behavior_cnt = 3;
+                        }
+                        idx_start_goal = 0;
+                        goal_status_changed = false;
+                    }
+                    else if(!goal_status_changed && previous_behavior_cnt != behavior_cnt){
+                        idx_start_goal = !idx_start_goal;
+                    }
+                    current_goal_.pose.position.x = current_goal_set_[idx_start_goal].pose.position.x;
+                    current_goal_.pose.position.y = current_goal_set_[idx_start_goal].pose.position.y;
+                }
+                else if(behavior_cnt ==0){ // Main_goal
+                    if(goal_status_changed){
+                        if(NeedTurn(current_goal_set_[idx_start_goal],current_goal_,current_pos)){
+                            behavior_cnt = 1;
+                        }
+                        idx_start_goal = 1;
+                        goal_status_changed = false;
+                    }
+                    else if(!goal_status_changed && previous_behavior_cnt != behavior_cnt){
+                        idx_start_goal = !idx_start_goal;
+                    }
+                    current_goal_.pose.position.x = current_goal_set_[idx_start_goal].pose.position.x;
+                    current_goal_.pose.position.y = current_goal_set_[idx_start_goal].pose.position.y;
                 }
             }
+
+            previous_behavior_cnt = behavior_cnt;
+
+            ////--------------------------pcw event goal
+        }
+
+        if(event_flag){
+            if(behavior_cnt == 4 || behavior_cnt == 5 || behavior_cnt == 6)
+                behavior_cnt = 0;
         }
 
 
@@ -264,7 +465,6 @@ private:
         std::cout << "tunnel pose: " << tunnel_pose << std::endl;
 
         //std::cout <<" " <<std::endl;
-
 
         tf::StampedTransform transform;
         tf::TransformListener tf_listener;
@@ -288,21 +488,20 @@ private:
         g_x_err= global_x_err;
         g_y_err= global_y_err;
 
+        //        g_ctheta = (float) yaw;//TODO for straight control, have to change atan2
+        //        //check once
 
-        g_ctheta = (float) yaw;//TODO for straight control, have to change atan2
-        //check once
-
-        if (goal_index_ % goal_count_ ==0 && g_rtheta_flag==true)
-        {
-            g_rtheta_flag = false;
-            g_rtheta = atan2(global_y_err , global_x_err);
-        }
-        else if( goal_index_ % goal_count_ ==1 && g_rtheta_flag==false)
-        {
-            g_rtheta_flag = true;
-            g_rtheta = atan2(global_y_err , global_x_err);
-        }
-        line_y_pose = -pose_msg.pose.pose.position.x *sin(g_rtheta) + pose_msg.pose.pose.position.y *cos(g_rtheta); //rtheta_global theta rotation matrix
+        //        if (goal_index_ % goal_count_ ==0 && g_rtheta_flag==true)
+        //        {
+        //            g_rtheta_flag = false;
+        //            g_rtheta = atan2(global_y_err , global_x_err);
+        //        }
+        //        else if( goal_index_ % goal_count_ ==1 && g_rtheta_flag==false)
+        //        {
+        //            g_rtheta_flag = true;
+        //            g_rtheta = atan2(global_y_err , global_x_err);
+        //        }
+        //        line_y_pose = -pose_msg.pose.pose.position.x *sin(g_rtheta) + pose_msg.pose.pose.position.y *cos(g_rtheta); //rtheta_global theta rotation matrix
         //std::cout<<"position amcl: "<< pose_msg.pose.pose.position.x<< ", "<<pose_msg.pose.pose.position.y <<", " << yaw<<std::endl;
         //std::cout<<"position test: "<< pose_msg.pose.pose.position.x<< ", "<<pose_msg.pose.pose.position.y <<", " << asin(pose_msg.pose.pose.orientation.z)*2<<std::endl;
         //----------------------------------------------- current // is_rotating is essential
@@ -416,6 +615,7 @@ private:
             switch(behavior_cnt) // Behave in turn
             {
             case 0://moving to go turning point: start straight
+                Camera_noline_flag = false; //To make sure if there is flag sign
                 init_start_ = false;
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction =1;
@@ -433,6 +633,7 @@ private:
                 break;
 
             case 1://turn : QR or goal pose
+                Camera_noline_flag = false; //To make sure if there is flag sign
                 if(STOP_cnt<STOP_MAX)
                 {
                     STOP_cnt++;
@@ -485,26 +686,16 @@ private:
                 break;
 
             case 2: //moving back to home
+                Camera_noline_flag = false; //To make sure if there is flag sign
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction  = -1;
                 //                if(fabs(current_goal_.pose.position.x - tunnel_pose) < config_.global_dist_boundary_){
                 //                    Next_step = true;
                 //                    ROS_INFO("Tunnel POse STOP !!!!");
                 //                }
+
+                //TODO next_step is set to be 'true' when the green line is detected
                 if(Next_step||global_dist_err < config_.global_dist_boundary_ )
-                    /* //To rotate with QR. It should be changed with line color detection
-//                if(fid_area >=QR_DISTANCE && fid_ID == QR_home)
-//                {
-//                    if(home_arrival_flag)
-//                    {
-//                        home_arrival_flag =false;
-//                        current_tunnel_pose =tunnel_pose;
-//                    }
-//                    if(fabs(current_tunnel_pose - tunnel_pose) > TorotateAtHome)
-//                        Next_step = true;
-//                }
-//                if(Next_step)
-*/
                 {
                     home_arrival_flag = true;
                     Next_step=false;
@@ -514,6 +705,7 @@ private:
                 break;
 
             case 3://stop -> turn : QR or goal pose
+                Camera_noline_flag = false; //To make sure if there is flag sign
                 if(STOP_cnt<STOP_MAX)
                 {
                     STOP_cnt++;
@@ -566,7 +758,7 @@ private:
                 mobile_direction = 1;
                 if(Joy_mode==false)
                 {
-                    mode_dockin.data = 4;
+                    mode_dockin.data = 4; //mode/low
                     pub_mode_call_.publish(mode_dockin);
                 }
                 else if(Joy_mode==true) //To stop dock in node
@@ -575,45 +767,49 @@ private:
                     pub_mode_call_.publish(mode_dockin);
                 }
 
-                if(Next_step||Charging_done_flag) //TODO
+                //                if(Next_step||Charging_done_flag) //for case 5 or case 6
+                if(Next_step||Camera_noline_flag) //
                 {
-                    mode_dockin.data = 0;
-                    pub_mode_call_.publish(mode_dockin);//To stop dock in.
+                    mode_dockin.data = 0; //mode/low : stop_mode
+                    pub_mode_call_.publish(mode_dockin);//To stop dock in with camera.
+
+                    Camera_noline_flag = false;
                     Next_step =false;
-                    Charging_done_flag = 0;
+                    //                    Charging_done_flag = 0; //for case 5 or case 6
                     behavior_cnt++;
                     postech_mode = STOP_MODE;
                 }
                 break;
 
-                //            case 5://wait : before resservice call
-                //                postech_mode = STOP_MODE;
-                //                if(Next_step||Charging_done_flag)//rosserive call
-                //                {
-                //                    Next_step=false;
-                //                    behavior_cnt++;
-                //                    postech_mode = STOP_MODE;
+            case 5://wait : before resservice call
+                Camera_noline_flag = false; //To make sure if there is flag sign
+                postech_mode = STOP_MODE;
+                if(Next_step||Charging_done_flag)//rosserive call
+                {
+                    Next_step=false;
+                    behavior_cnt++;
+                    postech_mode = STOP_MODE;
 
-                //                    Charging_done_flag =0;
-                //                }
-                //                break;
+                    Charging_done_flag =0;
+                }
+                break;
 
-            case 5://dokcing_out : rostopic pub ending_charging
+            case 6://dokcing_out : rostopic pub ending_charging
                 mobile_direction =1;
                 if(docking_out_flag)
                 {
                     docking_out_flag = false;
-                    init_start_=true;
+                    //                    init_start_=true; // Right after charging done
                     tunnel_pose = 0;
                 }
                 else
                 {
-                    init_start_=false;
+                    //                    init_start_=false;
                 }
                 //Lidar docking
-//                postech_mode = DOCK_OUT_MODE;
+                //                postech_mode = DOCK_OUT_MODE;
 
-//             camera docking out
+                //             camera docking out
                 if(Joy_mode==false)
                 {
                     mode_dockin.data = 5;
@@ -631,14 +827,16 @@ private:
                     Next_step = true;
                     ROS_INFO("Tunnel POse STOP !!!!");
                 }*/
-                if(Next_step|| global_dist_err<config_.global_dist_boundary_)// To use AMCL pose probably
+                //                if(Next_step|| global_dist_err<config_.global_dist_boundary_)// To use AMCL pose probably
+                if(Next_step|| Camera_noline_flag)// To use AMCL pose probably
                 {
                     mode_dockin.data = 0;
                     pub_mode_call_.publish(mode_dockin);//To stop dock out
+                    Camera_noline_flag = false;
                     Next_step=false;
                     behavior_cnt=0;
                     postech_mode = STOP_MODE;
-                    //init_start_ = true;
+                    //                    init_start_ = true;
                     docking_out_flag = true;
                     //goal_index_ ++;
                     camera_on_cnt=0;
@@ -650,7 +848,7 @@ private:
                 ROS_INFO("Behavior error: rostopic pub /Mode_Decision std_msgs/Int32 data: #number // ex) data: 0");
                 break;
             }
-            ROS_INFO("Behavior count: %d", behavior_cnt);
+            //ROS_INFO("Behavior count: %d", behavior_cnt);
 
         }
         //-----------------
@@ -1026,7 +1224,9 @@ private:
     ros::Subscriber sub_pose_lio_;
     ros::Subscriber sub_pose_driving_;
     ros::Subscriber sub_goal_;
-    ros::Subscriber sub_front_camera;
+    //    ros::Subscriber sub_front_camera;
+    ros::Subscriber sub_camera_line_end_;
+
 
 
     ros::Subscriber sub_area_;
@@ -1037,6 +1237,7 @@ private:
     ros::Subscriber sub_predone_;
     ros::Subscriber sub_mode_decision_;
     ros::Subscriber sub_pose_dt_from_linearvel; //pcw for QR local
+    ros::Subscriber sub_event_end_;//Event : pcw
 
     ros::ServiceServer sub_docking_done_;
 
@@ -1052,7 +1253,9 @@ private:
     bool init_start_ = false; //To initial odom and IMU
     bool g_rtheta_flag =true;
     bool FIRST_START_FLAG =true; //To set a behavior_cnt at first
-    bool new_goal_flag =false;//For a event goal
+    bool event_flag =false;//For a event goal
+    bool event_end_flag = false;
+    int idx_start_goal = 0;
 
     bool Joy_mode= false;
     // GOAL
@@ -1068,6 +1271,7 @@ private:
     //Cmaera
     int fid_ID=0;
     float fid_area=0;
+    bool Camera_noline_flag= false;
 
     //Linear vel pose from roverroboics_ros_drier
     //pcw for QR local
@@ -1078,7 +1282,7 @@ private:
     //
 
     //Decision
-    unsigned int behavior_cnt =5;
+    unsigned int behavior_cnt =6; //For case 5 or case 6
     bool Charging_done_flag =false;
     int HJ_mode_low=STOP_MODE;
     bool Next_step =false;
@@ -1103,17 +1307,6 @@ private:
 
     unsigned int camera_on_cnt =0;
 
-    //Event : pcw
-//    struct map_range{
-//      double start_x_;
-//      double start_y_;
-//      double end_x_;
-//      double end_y_;
-
-//      int section_;
-//    };
-//    vector<map_range> map_section;
-
     //odom publish
     double odom_x=0;
     double odom_y=0;
@@ -1121,10 +1314,18 @@ private:
     double update_x=0, update_y=0, update_theta=0;
     bool odom_update=false,odom_init_flag=false;
 
-    std::vector<geometry_msgs::PoseStamped> goal_set_;
+    geometry_msgs::PoseStamped event_goal_set_[2];
+    geometry_msgs::PoseStamped main_goal_set_[2];
+    geometry_msgs::PoseStamped current_goal_set_[2];
     geometry_msgs::PoseStamped current_goal_;
 
     geometry_msgs::PoseWithCovarianceStamped current_pose;
+
+    //Event : pcw
+    bool goal_status_changed = false;
+    vector<geometry_msgs::PoseStamped> map_data;
+    // end Event : pcw
+
 
     /** configuration parameters */
     typedef struct
@@ -1220,7 +1421,8 @@ void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odo
     tunnel_pose += mobile_direction*odom_msgs->twist.twist.linear.x * dt ;
     encoder_angular = odom_msgs->twist.twist.angular.z;
     if(behavior_cnt == 1 || behavior_cnt == 3){
-        encoder_angle += encoder_angular* dt*2/3;
+        //        encoder_angle += encoder_angular* dt*2/3;
+        encoder_angle += encoder_angular* dt;
     }
     else{
         encoder_angle = 0;
