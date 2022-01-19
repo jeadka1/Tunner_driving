@@ -165,9 +165,9 @@ private:
             goal_status_changed = true;
             //event for test
             event_goal_set_[0].pose.position.x = 1.0;
-            event_goal_set_[0].pose.position.y = 0.0;
-            event_goal_set_[1].pose.position.x = 2.0;
-            event_goal_set_[1].pose.position.y = 0.0;
+            event_goal_set_[0].pose.position.y = 1.0;
+            event_goal_set_[1].pose.position.x = 3.0;
+            event_goal_set_[1].pose.position.y = 3.0;
         }
     }
     void EventEndCallback(const std_msgs::Empty::ConstPtr &msg){ //Event : pcw
@@ -398,7 +398,7 @@ private:
                 current_pos.pose.position.y = pose_msg.pose.pose.position.y;
             }
 
-            if(event_end_flag){
+            if(event_end_flag){// Event end
                 behavior_cnt = 2;
                 idx_start_goal = 0;
                 if(NeedTurn(current_goal_set_[idx_start_goal],current_goal_,current_pos)){
@@ -410,17 +410,18 @@ private:
                 current_goal_.pose.position.y = current_goal_set_[idx_start_goal].pose.position.y;
 
                 event_end_flag = false;
+                goal_status_changed = false;
             }
             else{
-                if(behavior_cnt==2){ //Main_start // For case 5 or case 6
-                    if(goal_status_changed && NeedTurn(current_goal_set_[idx_start_goal],current_goal_,current_pos)){
+                if(behavior_cnt==2){ //Main_start
+                    if(goal_status_changed){
                         if(NeedTurn(current_goal_set_[idx_start_goal],current_goal_,current_pos)){
                             behavior_cnt = 3;
                         }
                         idx_start_goal = 0;
                         goal_status_changed = false;
                     }
-                    else if(!goal_status_changed && previous_behavior_cnt != behavior_cnt){
+                    else if(!goal_status_changed && previous_behavior_cnt != behavior_cnt){ // if behavior_cnt is changed
                         idx_start_goal = !idx_start_goal;
                     }
                     current_goal_.pose.position.x = current_goal_set_[idx_start_goal].pose.position.x;
@@ -434,7 +435,7 @@ private:
                         idx_start_goal = 1;
                         goal_status_changed = false;
                     }
-                    else if(!goal_status_changed && previous_behavior_cnt != behavior_cnt){
+                    else if(!goal_status_changed && previous_behavior_cnt != behavior_cnt){ // if behavior_cnt is changed
                         idx_start_goal = !idx_start_goal;
                     }
                     current_goal_.pose.position.x = current_goal_set_[idx_start_goal].pose.position.x;
@@ -664,10 +665,10 @@ private:
                         global_ang_err += 2*M_PI;
 
                     //                    driving Tunnel pose
-                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
-                        Next_step = true;
-                        ROS_INFO("Tunnel POse STOP !!!!");
-                    }
+//                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
+//                        //Next_step = true;
+//                        ROS_INFO("Tunnel POse STOP !!!!");
+//                    }
                     if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
                     {
                         Next_step=false;
@@ -733,10 +734,10 @@ private:
                         global_ang_err -= 2*M_PI;
                     else if(global_ang_err < -M_PI)
                         global_ang_err += 2*M_PI;
-                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
-                        Next_step = true;
-                        ROS_INFO("Tunnel POse STOP !!!!");
-                    }
+//                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
+//                        Next_step = true;
+//                        ROS_INFO("Tunnel POse STOP !!!!");
+//                    }
                     if(Next_step||abs(global_ang_err) < config_.global_angle_boundary_) // Ending turn
                     {
                         Next_step=false;
