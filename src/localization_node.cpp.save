@@ -30,8 +30,7 @@
 #include <leo_driving/UpdateOdom.h>
 
 #define STOP_MAX 30
-#define FIRST_WAIT_MAX 150
-#define TUNNEL_ANGLE_MAX 3.13
+
 
 #define TorotateAtHome 0.3 //m
 #define QR_DISTANCE 2000
@@ -97,10 +96,7 @@ private:
         sub_event_end_ = nhp.subscribe<std_msgs::Empty>("/event_end", 1, &LocalizationNode::EventEndCallback, this); //Event : pcw
         sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
         sub_pose_lio_ = nhp.subscribe<nav_msgs::Odometry>("/localization", 10, &LocalizationNode::Update3dposeCallback, this);//fast-lio pose
-        // sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
-        timer_local_node_ =
-            nhp.createTimer(ros::Duration(0.1),
-                            &LocalizationNode::poseCallback, this);
+        sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
         sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
         sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
 
@@ -115,7 +111,7 @@ private:
         //	sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
 
         //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);//QR fiducital_area detection
-	sub_pose_dt_from_linearvel = nhp.subscribe<nav_msgs::Odometry>("/odom",30,&LocalizationNode::RobotOdomCallback,this);
+	sub_pose_dt_from_linearvel = nhp.subscribe<nav_msgs::Odometry>("/odom",1,&LocalizationNode::RobotOdomCallback,this);
 
 
         sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this); //TODO Docking done from robot-station
@@ -123,12 +119,9 @@ private:
         //pcw for Tunnel pose
         pub_for_test_QR_local = nhp.advertise<geometry_msgs::Point>("Tunnel_pose", 10); //To communicate with cmd_node
         //
-        pub_qr_global_update_= nhp.advertise<nav_msgs::Odometry>("/QR_localization", 1); //To use Dock in wiht Hanjeon
 
         pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); //To communicate with cmd_node
 
-	pub_3dlocal_start_ = nhp.advertise<std_msgs::Bool>("/localization_start",1);
-	pub_3dlocal_stop_ = nhp.advertise<std_msgs::Bool>("/localization_stop",1);
     }
 
 
@@ -173,10 +166,10 @@ private:
             event_flag=true; //TODO When the goal is set to basic goal, this parameter should be 'false'
             goal_status_changed = true;
             //event for test
-            event_goal_set_[0].pose.position.x = 7;//9.7;
-            event_goal_set_[0].pose.position.y = 0.5;//1.2;
-            event_goal_set_[1].pose.position.x = 10;//14;
-            event_goal_set_[1].pose.position.y = 0.5;//1.5;
+            event_goal_set_[0].pose.position.x = 7.0//9.7;
+            event_goal_set_[0].pose.position.y = 0.5;
+            event_goal_set_[1].pose.position.x = 10.0;
+            event_goal_set_[1].pose.position.y = 1.5;
         }
     }
     void EventEndCallback(const std_msgs::Empty::ConstPtr &msg){ //Event : pcw
@@ -295,8 +288,8 @@ private:
         //        cout<<"idx_previous_goal = "<<idx_previous_goal<<endl;
         //        cout<<"idx_current_pos   = "<<idx_current_pos<<endl;
 
-        if(!((idx_event_goal > idx_current_pos && idx_event_goal < idx_previous_goal) ||
-             (idx_event_goal > idx_previous_goal && idx_event_goal < idx_current_pos))){
+        if(!((idx_event_goal > idx_current_pos && idx_event_goal <= idx_previous_goal) ||
+             (idx_event_goal >= idx_previous_goal && idx_event_goal < idx_current_pos))){
             need_turn = true;
         }
         if(idx_event_goal == idx_current_pos){
@@ -308,8 +301,7 @@ private:
     }
 
 
-    // void poseCallback(const std_msgs::Int32::ConstPtr &empty_pose_msg)
-    void poseCallback(const ros::TimerEvent &event)
+    void poseCallback(const std_msgs::Int32::ConstPtr &empty_pose_msg)
     {
         if(FIRST_START_FLAG==true)
         {
@@ -354,7 +346,7 @@ private:
         localization_msgs.data.clear();
 
 
-        if(start_wait< FIRST_WAIT_MAX)
+        if(start_wait<150)
         {
             start_wait++;
             ROS_INFO_ONCE("Waiting for inserting goal... ");
@@ -523,8 +515,6 @@ private:
         //HJ_mode
 
         std_msgs::Int32 QR_msg;
-	std_msgs::Bool localization_pub;
-	localization_pub.data =true;
 
         if(config_.HJ_MODE_==0){
             switch(HJ_mode_low) //To decide what the mobile robot does
@@ -632,12 +622,6 @@ private:
             switch(behavior_cnt) // Behave in turn
             {
             case 0://moving to go turning point: start straight
-		if(STOP_cnt <STOP_MAX)
-		{
-			STOP_cnt++;
-			postech_mode = STOP_MODE;
-		}
-		else{ 
                 Camera_noline_flag = false; //To make sure if there is flag sign
                 init_start_ = false;
                 postech_mode = AUTO_LIDAR_MODE;
@@ -652,9 +636,7 @@ private:
                     Next_step=false;
                     behavior_cnt++;
                     postech_mode = STOP_MODE;
-			STOP_cnt = 0;
                 }
-		}
                 break;
 
             case 1://turn : QR or goal pose
@@ -689,18 +671,18 @@ private:
                         global_ang_err += 2*M_PI;
 
 		    //turning stop
-			//turning_stop_cnt++;
-			//if(turning_stop_cnt>=TURNING_STOP && turning_stop_cnt <TURNING_STOP*3)
-			//{
-				//postech_mode = STOP_MODE;
-		//	}
-		//	else if(turning_stop_cnt==TURNING_STOP*3)
-		//	{
-				//turning_stop_cnt =0;
-		//	}
+			turning_stop_cnt++;
+			if(turning_stop_cnt>=TURNING_STOP && turning_stop_cnt <TURNING_STOP*3)
+			{
+				postech_mode = STOP_MODE;
+			}
+			else if(turning_stop_cnt==TURNING_STOP*3)
+			{
+				turning_stop_cnt =0;
+			}
 			
                     //                    driving Tunnel pose
-                    if(fabs(encoder_angle) > TUNNEL_ANGLE_MAX){//141592){
+                    if(fabs(encoder_angle - 3.14) < config_.global_angle_boundary_){
                         Next_step = true;
                         ROS_INFO("Tunnel POse STOP !!!!");
                     }
@@ -723,12 +705,6 @@ private:
                 break;
 
             case 2: //moving back to home
-		if(STOP_cnt > STOP_MAX)
-		{
-			STOP_cnt++;
-			postech_mode = STOP_MODE;
-		}
-		else{
                 Camera_noline_flag = false; //To make sure if there is flag sign
                 postech_mode = AUTO_LIDAR_MODE;
                 mobile_direction  = -1;
@@ -744,9 +720,7 @@ private:
                     Next_step=false;
                     behavior_cnt++;
                     postech_mode = STOP_MODE;
-                	STOP_cnt=0;
-		}
-		}
+                }
                 break;
 
             case 3://stop -> turn : QR or goal pose
@@ -780,15 +754,15 @@ private:
                         global_ang_err += 2*M_PI;
 
 			//turning stop
-			//turning_stop_cnt++;
-			//if(turning_stop_cnt >=TURNING_STOP && turning_stop_cnt<TURNING_STOP*3)
-			//	postech_mode = STOP_MODE;
-			//else if(turning_stop_cnt ==TURNING_STOP*3)
-			//	turning_stop_cnt =0;
+			turning_stop_cnt++;
+			if(turning_stop_cnt >=TURNING_STOP && turning_stop_cnt<TURNING_STOP*3)
+				postech_mode = STOP_MODE;
+			else if(turning_stop_cnt ==TURNING_STOP*3)
+				turning_stop_cnt =0;
 
 
 
-                    if(fabs(encoder_angle) > TUNNEL_ANGLE_MAX){//141592){
+                    if(fabs(encoder_angle - 3.14) < config_.global_angle_boundary_){
                         Next_step = true;
                         ROS_INFO("Tunnel POse STOP !!!!");
                     }
@@ -812,11 +786,6 @@ private:
             case 4:// docking in :
                 postech_mode = DOCK_IN_MODE;//moving
                 mobile_direction = 1;
-		if(docking_in_flag)
-		{
-			docking_in_flag = false;
-			pub_3dlocal_stop_.publish(localization_pub);
-		}
                 if(Joy_mode==false)
                 {
                     mode_dockin.data = 4; //mode/low
@@ -834,7 +803,6 @@ private:
                     mode_dockin.data = 0; //mode/low : stop_mode
                     pub_mode_call_.publish(mode_dockin);//To stop dock in with camera.
 
-			docking_in_flag = true;
                     Camera_noline_flag = false;
                     Next_step =false;
                     //                    Charging_done_flag = 0; //for case 5 or case 6
@@ -860,7 +828,6 @@ private:
                 mobile_direction =1;
                 if(docking_out_flag)
                 {
-//			pub_3dlocal_start_.publish(localization_pub);
                     docking_out_flag = false;
                     //                    init_start_=true; // Right after charging done
                     tunnel_pose = 0;
@@ -895,8 +862,7 @@ private:
                 {
                     mode_dockin.data = 0;
                     pub_mode_call_.publish(mode_dockin);//To stop dock out
-                	pub_3dlocal_start_.publish(localization_pub);    
-			Camera_noline_flag = false;
+                    Camera_noline_flag = false;
                     Next_step=false;
                     behavior_cnt=0;
                     postech_mode = STOP_MODE;
@@ -1261,17 +1227,11 @@ private:
 
 
     }
-    void SetQRPose(unsigned int id){//pcw for QR local
-        nav_msgs::Odometry qr_odom_msgs;
-
-        qr_odom_msgs.header.seq = (unsigned int)id;
-        qr_odom_msgs.pose.pose.position.x = 0.0;
-        qr_odom_msgs.pose.pose.position.y = 0.0;
-        qr_odom_msgs.pose.pose.position.z = 0.0;
-        pub_qr_global_update_.publish(qr_odom_msgs);
-
-        qr_publish_flag = false;
-
+    void SetQRPose(int id){//pcw for QR local
+        //just for test have to modify to real value
+        //if(id <100)
+        if(id==1 || id ==2)
+            tunnel_pose = id*100;
     }
 
     //Previous thoughts
@@ -1292,7 +1252,6 @@ private:
     ros::Subscriber sub_joy_;
     ros::Subscriber sub_pose_;
     ros::Subscriber sub_pose_lio_;
-    ros::Timer timer_local_node_;
     ros::Subscriber sub_pose_driving_;
     ros::Subscriber sub_goal_;
     //    ros::Subscriber sub_front_camera;
@@ -1318,10 +1277,7 @@ private:
     ros::Publisher pub_log_data_;
     ros::Publisher pub_mode_call_;
     ros::Publisher pub_for_test_QR_local;//pcw for Tunnel pose
-    ros::Publisher pub_qr_global_update_;
 
-	ros::Publisher pub_3dlocal_start_;
-	ros::Publisher pub_3dlocal_stop_;
 
     bool is_rotating_ = false;
     bool init_start_ = false; //To initial odom and IMU
@@ -1343,10 +1299,8 @@ private:
     float line_y_pose = 0;//not necessary
 
     //Cmaera
-    unsigned int fid_ID=0;
+    int fid_ID=0;
     float fid_area=0;
-    float prev_fid_ID =0.0;
-    bool qr_publish_flag = true;
     bool Camera_noline_flag= false;
 
     //Linear vel pose from roverroboics_ros_drier
@@ -1376,7 +1330,6 @@ private:
 
     bool home_arrival_flag =true;
     bool docking_out_flag = true;
-	bool docking_in_flag =true;
     float Docking_out_cmd =0;
 
     double encoder_angle = 0;
@@ -1435,18 +1388,11 @@ bool LocalizationNode::odominit(leo_driving::UpdateOdom::Request& req, leo_drivi
 }
 void LocalizationNode::areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs) //QR detection Aurco realsense for a front camera.
 {
-    fid_ID = (unsigned int) area_msgs->data[0];
+    fid_ID = (int) area_msgs->data[0];
     fid_area =area_msgs->data[1];
     //ROS_INFO("fid_ID: %d, are: %f",fid_ID, fid_area);
-    if(!qr_publish_flag && prev_fid_ID != fid_ID) // Not to publish everytime whenever ID is detected
-    {
-        qr_publish_flag = true;
-    }
-    if(fid_area >= QR_DISTANCE && qr_publish_flag)
-        SetQRPose(fid_ID);
-    
-    prev_fid_ID = fid_ID;
-    
+
+    SetQRPose(fid_ID);
 }
 void LocalizationNode::DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call)
 {
@@ -1516,7 +1462,10 @@ void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odo
     geometry_msgs::Point tunnel_pos_pub;
     tunnel_pos_pub.x= tunnel_pose;
     tunnel_pos_pub.z = encoder_angle;
-    pub_for_test_QR_local.publish(tunnel_pos_pub);    
+    pub_for_test_QR_local.publish(tunnel_pos_pub);
+
+
+
 }
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);

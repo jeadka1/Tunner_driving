@@ -3,6 +3,8 @@ Kpy_param: 3.5 #3.5 for tunnel , 1.5:for straight test , 3.5 for docking
 Kpy_param_rot: 0.1 #0.01
 tunnel_gain_boundary_: 0.05 # 0.05 [m]
 Kpy_param_boundary_gain: 7.0 #bigger Kpy_param 
+theta_ratio: 0.8
+
 
 linear_vel: 0.3 #0.1
 robot_width: 0.7 #0.8
@@ -19,7 +21,7 @@ rot_ky: 0.0
 rot_kt: 1.0
 min_vel: 0.05 # The rover robotics can't move specific low speed
 min_rot: 0.8 # PREV:0.4  The rover robotics can't move specific low speed it was 1.0
-max_vel: 0.5
+max_vel: 1.5
 max_rot: 2.0 #
 Postech_code: true #to operate only (true)postech or (false) hanjeon
 

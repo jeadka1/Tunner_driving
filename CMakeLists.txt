@@ -93,13 +93,14 @@ add_library(LocalizationNode src/localization_node.cpp)
 add_dependencies(LocalizationNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(LocalizationNode ${catkin_LIBRARIES})
 
+add_library(ObstaclesNode src/obstacles_node.cpp)
+add_dependencies(ObstaclesNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(ObstaclesNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+
 add_library(AisleDetectNode src/aisle_detect_node.cpp)
 add_dependencies(AisleDetectNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(AisleDetectNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 
-add_library(ObstaclesNode src/obstacles_node.cpp)
-add_dependencies(ObstaclesNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(ObstaclesNode ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 
 add_library(CmdPublishNode src/cmd_publish_node.cpp)
 add_dependencies(ObstaclesNode ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})

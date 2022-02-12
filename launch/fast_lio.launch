@@ -1,35 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
     <param name="/use_sim_time" value="false"/>
+
+    <arg name="localization" default="false"/>
+
     <arg name="use_rp" default="true"/>
     <arg name="use_velo" default="true"/>
     <arg name="use_joy" default="true"/>
     <arg name="use_static_tf" default="true"/>
     <arg name="use_obs" default="true"/>
+    <arg name="use_vn" default="true"/>
+    <arg name="use_mpu" default="false"/>
 
-    <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/docking_test.yaml"/--><!-- 2nd black dock -->
-    <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/docking_2nd.yaml"/--><!-- 2nd dock -->
-    <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/underground_2building.yaml"/-->
-    <arg name="map_file" default="/home/cocel/catkin_ws/maps/seoul_gmap_200.yaml"/> <!-- in front of computer -->
-    <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/short_seoul.yaml"/-->
-    <!--arg name="map_file" default="/home/cocel/catkin_ws/maps/211122_mosa_in.yaml"/-->
-
-    <node pkg="rosservice" type="rosservice" name="rosservice" args="call /odom_init 0.0 0.0 0.0"/>
-
-    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
-    <!--include file="$(find fast_lio)/launch/localization_velodyne.launch" /-->
- 
-    <node name="amcl" pkg="amcl_pose_updater" type="amcl_pose_updater" clear_params="true" output="screen">
-        <rosparam command="load" file="$(find leo_driving)/config/amcl.yaml"/>
-    </node>
-  
 
     <!-- aruco & QR camera-->
     <!--include file="$(find realsense2_camera)/launch/rs_camera.launch"/-->
     <!--include file="$(find aruco_detect)/launch/aruco_detect.launch"/-->
 
 
-    <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/view_data.rviz"/>
+    <node type="rviz" name="rviz" pkg="rviz" args="-d $(find leo_driving)/rviz/localization.rviz"/>
 
     <node if="$(arg use_rp)" name="rplidarNode"          pkg="rplidar_ros"  type="rplidarNode" output="screen">
         <param name="serial_port"         type="string" value="/dev/rplidar"/>
@@ -41,10 +30,26 @@
         <remap from="/scan" to="/rp/scan"/>
     </node>
 
+    <!-- Sensor launch files -->
     <include if="$(arg use_velo)" file="$(find velodyne_pointcloud)/launch/VLP16_points.launch"/>
     <include if="$(arg use_joy)" file="$(find teleop_twist_joy)/launch/teleop.launch"/>
-    <include file="$(find vectornav)/launch/vectornav.launch"/>
-    <include file="$(find robot_localization)/launch/ekf_template.launch"/>
+    <include if="$(arg use_vn)" file="$(find vectornav)/launch/vectornav.launch"/>
+    <node if="$(arg use_mpu)" pkg="rosserial_python" type="serial_node.py" name="mpu6050" args="_port:=/dev/ttyACM0 _baud:=115200" output="screen" />
+
+    <!-- <include file="$(find robot_localization)/launch/ekf_template.launch"/> -->
+
+
+    <!-- Run Fast-LIO Localization -->
+    <!-- <include file="$(find fast_lio)/launch/localization_velodyne.launch" >
+        <arg if="$(arg use_vn)" name="sensor" type="string" value="vectornav"/>
+        <arge  if="$(arg use_mpu)" name="sensor" type="string" value="mpu6050"/>
+    </include> -->
+    <!-- <node pkg="fast_lio" type="localization_run.py" name="localization_run" output="screen">
+        <param if="$(arg use_vn)" name="sensor" type="string" value="vectornav"/>
+        <param  if="$(arg use_mpu)" name="sensor" type="string" value="mpu6050"/>
+    </node> -->
+
+    <!-- <node pkg="rosservice" type="rosservice" name="rosservice" args="call /odom_init 0.0 0.0 0.0"/> -->
     
     <!-- LEO_DRIVING PACKAGE-->
     <node pkg="rostopic" type="rostopic" name="lidar_driving_trigger" args="pub -r 10 /cmd_publish std_msgs/Int32 0" output="screen"/>
@@ -52,7 +57,7 @@
     
     <node if="$(arg use_rp)" pkg="nodelet" type="nodelet" name="AisleDetectNode_loader" args="load auto_driving/AisleDetectNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/aisle_detect.yaml"/>
-        <param name="amcl_driving" value="true"/>
+        <param name="amcl_driving" value="$(arg localization)"/>
 	<remap from="/joystick" to="/joy"/>
     </node>
 
@@ -66,7 +71,7 @@
 	<remap from="/joystick" to="/joy"/>
     </node-->
 
-    <node pkg="nodelet" type="nodelet" name="Localization_loader" args="load auto_driving/LocalizationNode nodelet_manager" output="screen">
+    <node if="$(arg localization)" pkg="nodelet" type="nodelet" name="Localization_loader" args="load auto_driving/LocalizationNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/localization.yaml"/>
         <param name="amcl_driving" value="true"/>
 	<remap from="/joystick" to="/joy"/>
@@ -75,8 +80,14 @@
     <!-- STATIC TF PUBLISHER -->
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_rp" args="0 0 0 3.141592 0 0 base_link laser 100" />
     <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_velo" args="0.0735 0 0 0 0 0 base_link velodyne 100" /> <!-- 0.0635-->
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="base_link_to_imu" args="0.0735 0 0 0.0 0 0 base_link imu 100" />
-    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="map_to_odom" args="0 0 0 0.0 0 0 map odom 100" />
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="velo_to_imu" args="0.002 0 -0.064 0.0 0 0 velodyne imu 100" />
+    <!-- <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="map_to_odom" args="0 0 0 0.0 0 0 map odom 100" /> -->
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="map_to_odom" args="0 0 0 0.0 0 0 map_pointcloud odom 100" />
+    <node if="$(arg use_static_tf)" pkg="tf" type="static_transform_publisher" name="body_to_base" args="0 0 0 0.0 0 0 body base_link 100" />
+
+
+
+
 
 
 </launch>

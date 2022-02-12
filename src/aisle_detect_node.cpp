@@ -35,9 +35,10 @@
 #include <algorithm>
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
-#include <leo_driving/Mode.h>
+// #include <leo_driving/Mode.h>
 
 #define INIT_WAIT 10
+#define RATIO_VEL 1.5
 
 using namespace message_filters;
 using namespace std;
@@ -79,6 +80,7 @@ private:
         nhp.param("Kpy_param", config_.Kpy_param_, 1.1);
         nhp.param("Kpy_param_rot", config_.Kpy_param_rot_, 0.01);
         nhp.param("Kpy_param_boundary_gain", config_.Kpy_param_boundary_gain_, 0.05);
+        nhp.param("theta_ratio", config_.theta_ratio_, 0.8);
         nhp.param("tunnel_gain_boundary", config_.tunnel_gain_boundary_, 0.01);
         nhp.param("linear_vel", config_.linear_vel_, 0.0);
         nhp.param("robot_width", config_.robot_width_, 0.45);
@@ -101,7 +103,7 @@ private:
         nhp.param("obs_avoidance_distance", config_.obs_avoidance_distance_, 0.1);
 
         // Subscriber & Publisher
-        sub_scan_ = nhp.subscribe("/rp/scan", 10, &AisleDetectNode::scanCallback, this);
+        sub_scan_ = nhp.subscribe("/rp/scan", 20, &AisleDetectNode::scanCallback, this);
 
         pub_line_ = nhp.advertise<sensor_msgs::PointCloud2>("/cluster_line", 10);
         pub_points_ = nhp.advertise<sensor_msgs::PointCloud2> ("/aisle_points", 10);
@@ -117,13 +119,19 @@ private:
         sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &AisleDetectNode::SpeedCallback, this);
 
 
-        pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 10);
+        pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 20);
         pub_docking_end_ = nhp.advertise<std_msgs::Int32> ("/joy_from_cmd", 1); // Temperary To finish with joystick
         pub_prelidar_end_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/end", 10);
     };
 
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan_msg)
     {
+        // double dt = 0;
+        // ros::Time ros_now_time = ros::Time::now();
+        // double now_time = ros_now_time.toSec();
+
+        
+
         std_msgs::Empty EmptyMsg;
         // 1. Data type conversions (laser scan -> pointcloud2)
         laser_geometry::LaserProjection projector;
@@ -325,7 +333,12 @@ private:
         //// 2. Autonomous Driving
 
         float y_err_local = ref_y_ - near_y_;
+        float line_length_obs = copysign(fabs(line_start_y_ - line_end_y_),y_err_local);
+        float y_err_theta = config_.theta_ratio_*atan2(y_err_local,0.2) + (1-config_.theta_ratio_)*atan2(line_length_obs,0.8);
+        // std::cout<< "y_err_local" <<y_err_local<<std::endl;
+        // std::cout<< "line_length_obs" <<line_length_obs<<std::endl;
         cmd_vel.linear.x = config_.linear_vel_;
+	    double temp_angular_max;
         //std::cout<<"---------------------------ais: " << y_err_local<<std::endl;
         // 2.1 Check Obstacles
 
@@ -426,12 +439,19 @@ private:
 //                cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
 //            pre_y_err = y_err_local;
 
-            //Tan err controller
-            tunnel_angle_diff = atan2(y_err_local,0.2);
-            //cmd_vel.linear.x = config_.linear_vel_;
-            cmd_vel.angular.z= -config_.Kpy_param_*tunnel_angle_diff - config_.Kpy_param_rot_*(tunnel_angle_diff - pre_y_err)*10; // rad
-//            ROS_INFO("tunnel_angle: %f, cmd_z %f",atan2(y_err_local,0.2),cmd_vel.angular.z);
-            pre_y_err = tunnel_angle_diff;
+        // if (was_obs_in_aisle){ //for obstacle avoid
+        if(1){
+            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+            pre_y_err = y_err_local;
+        }
+        else{ //for normal driving by theta 
+
+            cmd_vel.angular.z= -config_.Kpy_param_*y_err_theta-config_.Kpy_param_rot_*(y_err_theta - pre_y_err)*10; // rad
+            pre_y_err = y_err_theta;
+        }
+            
+
+		cmd_vel.linear.x = config_.linear_vel_;//(tunnel_angle_diff);
 
             //Saturation parts due to Zero's deadline from VESC
             if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
@@ -447,6 +467,14 @@ private:
                 cmd_vel.angular.z = config_.max_rot_;
             else if(cmd_vel.angular.z< -config_.max_rot_)
                 cmd_vel.angular.z = -config_.max_rot_;
+
+		// if(fabs(cmd_vel.angular.z) >RATIO_VEL)
+		// 	temp_angular_max = RATIO_VEL;
+		// else
+		// 	temp_angular_max = fabs(cmd_vel.angular.z);
+
+		// cmd_vel.linear.x = cmd_vel.linear.x*(1- temp_angular_max);
+
             //std::cout<<"x: "<<cmd_vel.linear.x<< ", z: " << cmd_vel.angular.z<<std::endl;
             //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
 
@@ -454,9 +482,9 @@ private:
             break;
 
         case TURN_MODE:
-            if(local_data_receive)
-            {
-                local_data_receive =false;
+            // if(local_data_receive)
+            // {
+            //     local_data_receive =false;
                 l_xerr= global_x_err_ *cos(global_c_theta_) + global_y_err_ *sin(global_c_theta_);
                 l_yerr= -global_x_err_ *sin(global_c_theta_) + global_y_err_ *cos(global_c_theta_);
                 //std::cout<< "static_x: " <<l_xerr <<", static_y:" << l_yerr <<std::endl;
@@ -492,7 +520,7 @@ private:
                 else if(cmd_vel.angular.z< -config_.max_rot_)
                     cmd_vel.angular.z = -config_.max_rot_;
                 pub_cmd_.publish(cmd_vel);
-            }
+            //}
             break;
 
         case AUTO_PRE_LIDAR_MODE:
@@ -556,7 +584,10 @@ private:
             break;
         }
         //cout<<"3. cmd_vel = "<<cmd_vel<<endl;
-
+        // ros::Time ros_end_time = ros::Time::now();
+        // double end_time = ros_now_time.toSec();
+        // dt = end_time - now_time;
+        // ROS_INFO("Current, during TIME: %f, %f",now_time,dt);
     }
 
     void joyCallback(const sensor_msgs::Joy::ConstPtr& joy_msg)
@@ -615,11 +646,50 @@ private:
             //pub_docking_end_.publish(joy_msg_to_node);
             ros::Duration(0.5).sleep();
         }
+        //Velocity maximum
+        // left right
+        if ((joy_msg->axes[6] == 1 || joy_msg->axes[6] == -1) && axes_flag[6] ==0)
+        {
+            axes_flag[6] = 1;
+            std::cout<<"(push) axes up "<<std::endl;
+            if(joy_msg->axes[6] == 1)
+                manual_ratio += 0.1;
+            else if(joy_msg->axes[6] == -1)
+                manual_ratio -= 0.1;
+            if(manual_ratio >= 1.5)
+                manual_ratio = 1.5;
+            else if(manual_ratio <= 0.5)
+                manual_ratio = 0.5;
+        }
+        else if(joy_msg->axes[6] == 0 && axes_flag[6] ==1)
+        {
+            axes_flag[6] =0;
+        }
+
+        // up down
+        if ((joy_msg->axes[7] == 1 || joy_msg->axes[7] == -1) && axes_flag[7] ==0)
+        {
+            axes_flag[7] = 1;
+            std::cout<<"(push) axes up "<<std::endl;
+            if(joy_msg->axes[7] == 1)
+                config_.linear_vel_ += 0.1;
+            else if(joy_msg->axes[7] == -1)
+                config_.linear_vel_ -= 0.1;
+            if(config_.linear_vel_ >= 1.5)
+                config_.linear_vel_ = 1.5;
+            else if(config_.linear_vel_ <= 0.2)
+                config_.linear_vel_ = 0.2;
+        }
+        else if(joy_msg->axes[7] == 0 && axes_flag[7] ==1)
+        {
+            axes_flag[7] =0;
+        }
+
         if(joy_driving_)
         {
             geometry_msgs::Twist cmd_vel;
-            cmd_vel.linear.x = joy_msg -> axes[1] * 1.0;
-            cmd_vel.angular.z = joy_msg -> axes[0] * 1.0;
+            cmd_vel.linear.x = joy_msg -> axes[1] * manual_ratio;
+            cmd_vel.angular.z = joy_msg -> axes[0] * manual_ratio;
             pub_cmd_.publish(cmd_vel);
             return;
         }
@@ -743,7 +813,8 @@ private:
 
     unsigned int switch_flag0 = true;
     unsigned int switch_flag1 = true;
-
+    bool axes_flag[7] ={true};
+    float manual_ratio = 1.0;
     unsigned int odom_update_cnt=0;//To update encoder odom while mapping
     float docking_out_flag=0;
     /** configuration parameters */
@@ -756,6 +827,8 @@ private:
         double Kpy_param_;
         double Kpy_param_rot_;
         double Kpy_param_boundary_gain_;
+        double theta_ratio_;
+
         double tunnel_gain_boundary_;
         double linear_vel_;
         double robot_width_;

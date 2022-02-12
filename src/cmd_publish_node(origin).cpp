@@ -133,8 +133,6 @@ private:
         nhp.param("Kpy_param", config_.Kpy_param_, 1.1);
         nhp.param("Kpy_param_rot", config_.Kpy_param_rot_, 0.01);
         nhp.param("Kpy_param_boundary_gain", config_.Kpy_param_boundary_gain_, 0.01);
-        nhp.param("theta_ratio", config_.theta_ratio_, 0.8);
-        
         nhp.param("tunnel_gain_boundary", config_.tunnel_gain_boundary_, 0.01);
         nhp.param("linear_vel", config_.linear_vel_, 0.0);
         nhp.param("robot_width", config_.robot_width_, 0.45);
@@ -162,7 +160,7 @@ private:
         // // Subscriber & Publisher
         sub_joy_ = nhp.subscribe<sensor_msgs::Joy>("/joystick", 1, &CmdPublishNode::joyCallback, this);
         sub_obs_dists_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/obs_dists", 10, &CmdPublishNode::obsCallback, this);
-        sub_aisle_ = nhp.subscribe<sensor_msgs::PointCloud2> ("/aisle_points", 10, &CmdPublishNode::aisleCallback, this);
+        //sub_aisle_ = nhp.subscribe<sensor_msgs::PointCloud2> ("/aisle_points", 10, &CmdPublishNode::aisleCallback, this);
 
 
         sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &CmdPublishNode::localDataCallback, this);
@@ -458,12 +456,9 @@ private:
         }
         
         //// 2. Autonomous Driving
-        
+
         float y_err_local = ref_y_ - near_y_;
-        float line_length_obs = copysign(fabs(line_start_y_ - line_end_y_),y_err_local);
-        float y_err_theta = config_.theta_ratio_*atan2(y_err_local,0.2) + (1-config_.theta_ratio_)*atan2(line_length_obs,1.5);
-        std::cout<< "Y_err_theta" <<atan2(y_err_local,0.2)<<std::endl;
-        std::cout<< "Total_line_theta" <<atan2(line_length_obs,1.5)<<std::endl;
+        //std::cout<<"---------------------------ais: " << y_err_local<<std::endl;
         // 2.1 Check Obstacles
 
         if (config_.check_obstacles_ && (Mode_type == AUTO_LIDAR_MODE || Mode_type == AUTO_IMAGE_MODE))
@@ -554,31 +549,14 @@ private:
             cmd_vel.linear.x = config_.linear_vel_;
 
             //Previous controller
-// //            if(y_err_local<config_.tunnel_gain_boundary_)
-// //                cmd_vel.angular.z = -config_.Kpy_param_boundary_gain_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
-// //            else
-//                 cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
-//             pre_y_err = y_err_local;
-            
-            
+//            if(y_err_local<config_.tunnel_gain_boundary_)
+//                cmd_vel.angular.z = -config_.Kpy_param_boundary_gain_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+//            else
+                cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
+            pre_y_err = y_err_local;
             //Tan err
-            //float theta1 = atan2(y_err_local,0.2);
-            //float theta2 = atan2(line_length_obs,1.5);
-
-
-           if (was_obs_in_aisle){ //for obstacle avoid
-               cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
-               pre_y_err = y_err_local;
-           }
-           else{ //for normal driving by theta 
-
-               cmd_vel.angular.z= -config_.Kpy_param_*y_err_theta-config_.Kpy_param_rot_*(y_err_theta - pre_y_err)*10; // rad
-               pre_y_err = y_err_theta;
-           }
-
-
-           
-           ROS_INFO("tunnel_angle: %f, cmd_z %f",cmd_vel.angular.z,atan2(y_err_local,0.2));
+//            cmd_vel.angular.z= config_.Kpy_param_*atan2(y_err_local,0.2); // rad
+//            ROS_INFO("tunnel_angle: %f, cmd_z %f",cmd_vel.angular.z,atan2(y_err_local,0.2));
 
 
             //Saturation parts due to Zero's deadline from VESC
@@ -729,7 +707,6 @@ private:
         double Kpy_param_;
         double Kpy_param_rot_;
         double Kpy_param_boundary_gain_;
-        double theta_ratio_;
         double tunnel_gain_boundary_;
         double linear_vel_;
         double robot_width_;
