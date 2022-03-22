@@ -2,29 +2,34 @@ line_thresh: 0.5 #0.01
 aisle_width: 0.6 #0.6
 
 Kpx_param: 2.0
-Kpy_param: 3.5 #1.0  #3.5 for tunnel , 1.5:for straight test , 3.5 for docking
-Kpy_param_rot: 0.1 #0.01
+Kpy_param: 1.7 #2.0 for atan2 #3.5 for tunnel refx-near_y  // ref only for 3.0
+Kpy_param_rot: 1.0 #1.0
 
 tunnel_gain_boundary_: 0.1 # 0.05 [m]
 Kpy_param_boundary_gain: 3.0 #bigger Kpy_param 
 theta_ratio: 0.8
 
 linear_vel: 0.3 #0.1
-robot_width: 0.7 #0.8
-obs_coefficient: 0.5
-front_obs: 0.6 #0.8
-boundary_percent: 0.02
-spare_length: 0.05
-#amcl_driving: false
+obs_vel_ratio: 0.7 #minwook, how much lower velocity when obs exist
+robot_width: 0.4 #0.44
+front_obs: 0.8
+front_obs_2: 0.5
+spare_length: 0.3
 check_obstacles: true
-obs_avoidance_distance: 0.1
+obs_avoidance_distance: 0.15 #0.12
+obs_double_check: true
+obs_double_ckeck_dist: 0.5 #0.6
+backward_length: -0.3
 
+
+
+#amcl_driving: false
 rot_kx: 0.05 #0.1
 rot_ky: 0.0
 rot_kt: 1.0
 min_vel: 0.05 # The rover robotics can't move specific low speed
 min_rot: 0.8 # PREV:0.4  The rover robotics can't move specific low speed it was 1.0
-max_vel: 1.0
+max_vel: 1.5
 max_rot: 2.0 #
 Postech_code: true #to operate only (true)postech or (false) hanjeon
 

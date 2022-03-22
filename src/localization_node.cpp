@@ -2,7 +2,6 @@
 #include "nodelet/nodelet.h"
 #include <pluginlib/class_list_macros.h>
 
-
 #include <sensor_msgs/Joy.h>
 #include <tf/transform_listener.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -20,15 +19,28 @@
 #include <nav_msgs/MapMetaData.h>
 #include "nav_msgs/Odometry.h"
 #include "time.h"
-
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <algorithm>
 
 #include <leo_driving/charging_done.h>
 #include <leo_driving/PlotMsg.h>
 #include <leo_driving/UpdateOdom.h>
 
+//Toggle the version
+#define NEWVER      1   //change to 0 if you want old version
+
+
+#define STOP_MAX_CNT 30
+
+//Set debug mode
+#define QR          0
+#define TUNNELPOSE  0
+#define LATER       0
+#define USING_CSV   0
+
+//Only in old version = can be erased//////////////
 #define STOP_MAX 30
 #define FIRST_WAIT_MAX 150
 #define TUNNEL_ANGLE_MAX 3.13
@@ -41,6 +53,8 @@
 #define turning_angle_encoder 3.05 //170 degree
 
 #define TURNING_STOP 10
+/////////////////////////////////////////////////////
+
 
 enum MODE_{
     CHARGE_MODE,
@@ -59,7 +73,954 @@ enum MODE_{
     TURN_MODE,
 };
 
+/* What ...
+ * mobile_direction
+ * initial_start
+ *
+ *
+ *
+ *
+ *
+ * */
+
 using namespace std;
+
+/////////////////////////////////////////////////////////////////////////////
+#if NEWVER
+/////////////////////////////////////////////////////////////////////////////
+namespace auto_driving {
+
+class LocalizationNode : public nodelet::Nodelet {
+public:
+    LocalizationNode() = default;
+
+private:
+    virtual void onInit() {
+        ros::NodeHandle nh = getNodeHandle();
+        ros::NodeHandle nhp = getPrivateNodeHandle();
+
+        // Configuration //
+        nhp.param("global_dist_boundary", config_.global_dist_boundary_, 0.3);
+        nhp.param("global_angle_boundary", config_.global_angle_boundary_, 0.05);
+        nhp.param("HJ_MODE", config_.HJ_MODE_, 0);
+        nhp.param("Without_QR_move", config_.Without_QR_move_, false);
+        nhp.param("Main_start_x", config_.Main_start_x_, 0.0);
+        nhp.param("Main_start_y", config_.Main_start_y_, 0.0);
+        nhp.param("Main_goal_x", config_.Main_goal_x_, 0.0);
+        nhp.param("Main_goal_y", config_.Main_goal_y_, 0.0);
+        nhp.param("tunnel_start", config_.tunnel_start_, 0.0);
+        nhp.param("tunnel_goal", config_.tunnel_goal_, 0.0);
+        nhp.param("amcl_driving", config_.amcl_driving_, true);
+
+        sub_joy_ = nhp.subscribe<std_msgs::Int32>("/joy_from_cmd", 10, &LocalizationNode::JoyCmdCallback, this); // Joystick data from cmd_node
+        sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdatePosCallback, this);//Pose callback from amcl node
+        sub_pose_lio_ = nhp.subscribe<nav_msgs::Odometry>("/localization", 10, &LocalizationNode::Update3dPosCallback, this);//fast-lio pose
+        sub_camera_line_end_ = nhp.subscribe<std_msgs::Empty>("/camera_noline", 1, &LocalizationNode::CameraEndCallback, this);
+
+        /* role as main function */
+        sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::Run, this);
+
+        sub_goal_ = nhp.subscribe<geometry_msgs::PoseStamped>("/move_base_simple/goal", 1, &LocalizationNode::SetGoalfromRviz, this);//Clicked point from RVIZ
+        sub_event_end_ = nhp.subscribe<std_msgs::Empty>("/event_end", 1, &LocalizationNode::EventEndCallback, this); //Event : pcw
+        sub_mode_decision_ = nhp.subscribe<std_msgs::Int32>("/Mode_Decision", 1, &LocalizationNode::ModedecisionCallback, this);//To jump behavior_cnd
+        sub_docking_done_ = nhp.advertiseService("charge_done", &LocalizationNode::docking_done, this); //TODO Docking done from robot-station
+
+        /* output primitive_mode to the cmd_publish_node */
+        pub_localization_ = nhp.advertise<std_msgs::Float32MultiArray>("/localization_data", 10); //To communicate with cmd_node
+
+        /* not using now */
+        sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
+        pub_robot_pose_ = nhp.advertise<geometry_msgs::PoseStamped>("/state/pose", 10);//To send to robot-station or Hanjeon
+        pub_mode_call_= nhp.advertise<std_msgs::Int32>("/mode/low", 10); //To use Dock in wiht Hanjeon
+
+        /* unknown.. */
+        sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
+
+        /* Used for Aruco QR */
+        //sub_area_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/fiducial_area_d", 1, &LocalizationNode::areaDataCallback, this);//QR fiducital_area detection
+        //sub_QRinit_ = nhp.subscribe("/QR_TEST", 1, &LocalizationNode::QRtestCallback, this); //While HJ_mode==1 or 2, the mode is changed to another HJ_mode ==2 or 1
+        //pub_QR_= nhp.advertise<std_msgs::Int32>("/QR_mode", 10); //To send to robot-station or Hanjeon --> not gonna use
+
+        /* for visualization. Unconnected to the other node */
+        pub_log_data_= nhp.advertise<leo_driving::PlotMsg>("/PlotMsg_data", 10); //To save the data to plot
+        pub_tunnel_pose = nhp.advertise<geometry_msgs::Point>("Tunnel_pose", 10); //pcw tunnel pose
+    }
+
+    void JoyCmdCallback(const std_msgs::Int32::ConstPtr& joy_msg){
+        if(config_.HJ_MODE_!=0){
+            switch(joy_msg->data){
+            case 0:
+                Next_step = true;
+                ROS_INFO("Joy A: Behavior ++");
+                break;
+            case 1:
+                Joy_mode=true;
+                break;
+            case 10:
+                Joy_mode=false;
+                break;
+            case 3:
+                behavior_cnt=0;
+                ROS_INFO("Joy X: Behavior 0");
+                break;
+            }
+        }
+    }
+    void UpdatePosCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& amcl_pose_msg)
+    {
+        pub_robot_pose_.publish(amcl_pose_msg);
+        current_pose = *amcl_pose_msg;
+        //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+    }
+    void Update3dPosCallback(const nav_msgs::Odometry::ConstPtr& lio_pose_msg)
+    {
+        geometry_msgs::PoseWithCovarianceStamped pose_stamped;
+        pose_stamped.header = lio_pose_msg->header;
+        pose_stamped.pose = lio_pose_msg->pose;
+        pub_robot_pose_.publish(pose_stamped);
+        current_pose = pose_stamped;
+        //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
+    }
+
+    void Run(const std_msgs::Int32::ConstPtr &empty_pose_msg){
+        if(FIRST_START_FLAG==true){
+            primitive_mode = STOP_MODE;
+            FIRST_START_FLAG=false;
+
+            ReadCSV(); // Get map path
+
+            //Set main goal from config
+            geometry_msgs::PoseStamped goal;
+            goal.pose.position.x = config_.Main_start_x_;
+            goal.pose.position.y = config_.Main_start_y_;
+            main_goal_set_[0] = goal;
+            goal.pose.position.x = config_.Main_goal_x_;
+            goal.pose.position.y = config_.Main_goal_y_;
+            main_goal_set_[1] = goal;
+
+            for(int i = 0; i < 2; i++){
+                cout<<"main_goal_set_["<<i<<"].pose.position.x = "<<main_goal_set_[i].pose.position.x<<endl;
+                cout<<"main_goal_set_["<<i<<"].pose.position.y = "<<main_goal_set_[i].pose.position.y<<endl;
+            }
+
+            //Set main goal as current goal
+            current_goal_set_[0] = main_goal_set_[0];
+            current_goal_set_[1] = main_goal_set_[1];
+            goal_current = current_goal_set_[1];
+            pos_docking_station = current_goal_set_[0];
+
+            if(config_.HJ_MODE_==1){//To start from Docking station
+                do_docking_out = true;
+                Docking_On = true;
+            }
+            else{ //To start iterative driving
+                do_turn = false;
+                do_docking_in = false;
+                do_waiting_charge = false;
+                do_docking_out = false;
+            }
+        }
+
+        geometry_msgs::PoseWithCovarianceStamped pose_msg;
+        pose_msg = current_pose;
+        std_msgs::Int32 mode_dockin;
+        std_msgs::Float32MultiArray localization_msgs;
+        localization_msgs.data.clear();
+
+        if(start_wait<150)
+        {
+            start_wait++;
+            ROS_INFO_ONCE("Waiting for inserting goal... ");
+
+            localization_msgs.data.push_back(0); // Postech mode
+            localization_msgs.data.push_back(0); // g_err.x
+            localization_msgs.data.push_back(0); // g_err.y
+            localization_msgs.data.push_back(0); // global_theta_err
+            localization_msgs.data.push_back(0); // global_c_theta_err
+            localization_msgs.data.push_back(0); // initcall
+            localization_msgs.data.push_back(0); // dokcking_cmd
+
+            pub_localization_.publish(localization_msgs);
+            return;
+        }
+        else
+        {
+            ROS_INFO_ONCE("Goal is set");
+            cout<<endl<<"1) goal_count_ = "<<goal_count_<<endl;
+            cout<<"2) goal_status_changed = "<<goal_status_changed<<endl;
+            cout<<"3) idx                 = "<<idx_start_goal<<endl;
+
+            ////--------------------------pcw event goal
+        }
+
+        // 1. Calculate Global Error~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        global_err g_err;
+        g_err.x = goal_current.pose.position.x - pose_msg.pose.pose.position.x;
+        g_err.y = goal_current.pose.position.y - pose_msg.pose.pose.position.y;
+        g_err.dist = sqrt(g_err.x*g_err.x + g_err.y*g_err.y);
+
+        std::cout << "4) goal (x,y) : " <<"(" <<goal_current.pose.position.x << ", " <<goal_current.pose.position.y << ")" <<std::endl;
+        std::cout << "5) curr (x,y) : " <<"(" <<pose_msg.pose.pose.position.x << ", " << pose_msg.pose.pose.position.y << ")" <<std::endl;
+        std::cout << "6) distance   : " << g_err.dist <<std::endl;
+        std::cout << "9) start_wait : " << start_wait <<std::endl;
+        std::cout << "7) event_goal[0] = "<<event_goal_set_[0].pose.position.x<<" , "<<event_goal_set_[0].pose.position.y<<std::endl;
+        std::cout << "8) event_goal[1] = "<<event_goal_set_[1].pose.position.x<<" , "<<event_goal_set_[1].pose.position.y<<std::endl;
+
+
+        tf::StampedTransform transform;
+        tf::TransformListener tf_listener;
+        if (!tf_listener.waitForTransform("/odom", "/base_link", ros::Time(0), ros::Duration(0.5), ros::Duration(0.01))){
+            ROS_ERROR("Unable to get pose from TF");
+            return;
+        }
+        try{
+            tf_listener.lookupTransform("/odom", "/base_link", ros::Time(0), transform);
+        }
+        catch (const tf::TransformException &e) {
+            ROS_ERROR("%s",e.what());
+        }
+        tf2::Quaternion orientation (transform.getRotation().x(), transform.getRotation().y(), transform.getRotation().z(), transform.getRotation().w());
+        tf2::Matrix3x3 m(orientation);
+
+        double roll, pitch, yaw;
+        m.getRPY(roll, pitch, yaw);
+        g_x_err= g_err.x;
+        g_y_err= g_err.y;
+
+        std_msgs::Int32 QR_msg;
+
+        if(config_.HJ_MODE_==0){
+#if LATER
+            switch(HJ_mode_low) //To decide what the mobile robot does
+            {
+            case AUTO_LIDAR_MODE:
+                init_start_ = false;
+                is_rotating_ = false;
+                STOP_cnt =0;
+                primitive_mode = AUTO_LIDAR_MODE;//moving
+                if(fid_ID==1 && fid_area >=5000)
+                {
+                    QR_msg.data =1;
+                    pub_QR_.publish(QR_msg);//
+                }
+                else if (fid_ID==2 && fid_area >=5000)
+                {
+                    QR_msg.data =2;
+                    pub_QR_.publish(QR_msg);//
+                }
+                break;
+
+            case TURN_MODE:
+                init_start_ = false;
+                if(STOP_cnt<STOP_MAX_CNT)
+                {
+                    STOP_cnt++;
+                    primitive_mode = STOP_MODE;//moving
+                }
+                else
+                {
+                    primitive_mode = TURN_MODE;//moving
+                    if(!is_rotating_)
+                    {
+                        is_rotating_ =true;
+                        std::cout<<"**Arrived to the goal position: "<<g_err.dist<<std::endl;
+                        static_x = pose_msg.pose.pose.position.x;
+                        static_y = pose_msg.pose.pose.position.y;
+                        goal_yaw = yaw + M_PI; // save current when start rotating
+                        if(goal_yaw > M_PI)
+                            goal_yaw -= 2*M_PI;
+                        else if(goal_yaw < -M_PI)
+                            goal_yaw += 2*M_PI;
+                    }
+                    g_err.ang = goal_yaw - yaw;
+                    std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<g_err.ang<<std::endl;
+                    if(g_err.ang > M_PI)
+                        g_err.ang -= 2*M_PI;
+                    else if(g_err.ang < -M_PI)
+                        g_err.ang += 2*M_PI;
+                    if(abs(g_err.ang) < config_.global_angle_boundary_) // Ending turn
+                    {
+                        STOP_cnt=0;
+                        behavior_cnt++;
+                        primitive_mode = STOP_MODE; //TODO depending on what we're gonna use the sensor (change to publish, rotating done)
+
+                        is_rotating_ =false;
+                        goal_index_++;
+                    }
+                    g_err.static_x_err = static_x - pose_msg.pose.pose.position.x;
+                    static_y_err = static_y - pose_msg.pose.pose.position.y;
+                    static_t = goal_yaw;
+                    static_ct = yaw;
+                }
+
+                break;
+
+            case DOCK_IN_MODE:
+                primitive_mode = DOCK_IN_MODE;//moving
+                init_start_ = false;
+                is_rotating_ = false;
+                STOP_cnt =0;
+                break;
+
+            case DOCK_OUT_MODE:
+                primitive_mode = DOCK_OUT_MODE;//moving
+                is_rotating_ = false;
+                STOP_cnt =0;
+                if(fid_ID==4 && fid_area >=5000)
+                {
+                    init_start_ = true;
+
+                    goal_index_ ++; //TODO ??
+                    QR_msg.data =4;
+                    pub_QR_.publish(QR_msg);//
+                }
+                break;
+
+            case STOP_MODE:
+                primitive_mode = STOP_MODE;//moving
+                init_start_ = false;
+                is_rotating_ = false;
+                STOP_cnt =0;
+                break;
+
+
+            default :
+                is_rotating_ = false;
+                init_start_ = false;
+                STOP_cnt =0;
+                break;
+            }
+#endif
+        }
+        //----------------------------------------------- postech mode
+        else if(config_.HJ_MODE_==1){ //With docking postech mode
+
+            //Define do_turn, Docking_Flag, Docking_station, doing_motio
+            if(do_turn){ // Turn motion ===============================================================
+                Camera_noline_flag = false; //To make sure if there is flag sign
+                if(STOP_cnt<STOP_MAX_CNT){ //Stop before turning
+                    STOP_cnt++;
+                    primitive_mode = STOP_MODE;
+                }
+                else{
+                    primitive_mode = TURN_MODE;
+                    if(!is_rotating_){ //Initialize turn motion
+                        is_rotating_ =true;
+
+                        //Save current state before turn
+                        static_x = pose_msg.pose.pose.position.x;
+                        static_y = pose_msg.pose.pose.position.y;
+                        goal_yaw = yaw + M_PI;
+
+                        //Scaling goal_yaw
+                        if(goal_yaw > M_PI) goal_yaw -= 2*M_PI;
+                        else if(goal_yaw < -M_PI)   goal_yaw += 2*M_PI;
+                    }
+
+                    g_err.ang = goal_yaw - yaw;
+                    //Scaling g_err.ang
+                    if(g_err.ang > M_PI)    g_err.ang -= 2*M_PI;
+                    else if(g_err.ang < -M_PI)  g_err.ang += 2*M_PI;
+
+                    std::cout<<  "start yaw: " << goal_yaw  <<", cur yaw: " << yaw<< ", yaw err:"<<g_err.ang<<std::endl;
+#if TUNNELPOSE
+                    if(fabs(encoder_angle - 3.05) < config_.global_angle_boundary_){
+                        Next_step = true;
+                        ROS_INFO("Tunnel POse STOP !!!!");
+                    }
+#endif
+                    if(Next_step||abs(g_err.ang) < config_.global_angle_boundary_){ // Done turning
+                        Next_step=false;
+                        primitive_mode = STOP_MODE;
+
+                        is_rotating_ =false;
+                        STOP_cnt =0;
+                        do_turn = false;
+                    }
+                    g_err.static_x_err = static_x - pose_msg.pose.pose.position.x;
+                    g_err.static_y_err = static_y - pose_msg.pose.pose.position.y;
+                    static_t = goal_yaw;
+                    static_ct = yaw;
+                }
+                cout<<"[1] Motion : @@@ Turn motion @@@"<<endl;
+                cout<<"[2] global angle err = "<<abs(g_err.ang)<<endl;
+            }
+            else if(goal_status_changed){
+                cout<<"[1] Motion : @@@ goal_status_changed @@@"<<endl;
+                goal_previous = goal_current;
+                current_pos.pose.position.x = pose_msg.pose.pose.position.x;
+                current_pos.pose.position.y = pose_msg.pose.pose.position.y;
+
+                if(event_flag){ // event goal setting
+                    current_goal_set_[0] = event_goal_set_[0];
+                    current_goal_set_[1] = event_goal_set_[1];
+                    event_flag = false;
+                    cout<<"[2] Set event goal" <<endl;
+                }
+                else if(event_end_flag){ // main goal setting
+                    current_goal_set_[0] = main_goal_set_[0];
+                    current_goal_set_[1] = main_goal_set_[1];
+                    event_end_flag = false;
+                    cout<<"[2] Set main goal" <<endl;
+                }
+                else{ // just turn
+                    goal_idx_cur = !goal_idx_cur;
+                    cout<<"[2] Toggle goal" <<endl;
+                }
+
+                goal_current = current_goal_set_[goal_idx_cur];
+
+                if(NeedTurn(goal_current,goal_previous,current_pos)){
+                    do_turn = true;
+                }
+                goal_status_changed = false;
+
+                cout<<"[3] goal_current = "<<goal_current.pose.position.x <<endl;
+            }
+            else if(do_docking_in){ // Docking in motion ================================================
+                primitive_mode = DOCK_IN_MODE;
+
+                if(!Joy_mode){
+                    mode_dockin.data = 4;
+                    pub_mode_call_.publish(mode_dockin);
+                }
+                else if(Joy_mode){ //To stop dock in node
+                    mode_dockin.data = 0;
+                    pub_mode_call_.publish(mode_dockin);
+                }
+
+                if(Next_step||Camera_noline_flag){
+                    mode_dockin.data = 0; //mode/low : stop_mode
+                    pub_mode_call_.publish(mode_dockin);//To stop dock in with camera.
+
+                    Camera_noline_flag = false;
+                    Next_step =false;
+                    primitive_mode = STOP_MODE;
+
+                    do_docking_in = false;
+                    do_waiting_charge = true;
+                }
+                cout<<"[1] Motion : @@@ Docking in motion @@@"<<endl;
+            }
+            else if(do_waiting_charge){
+                Camera_noline_flag = false; //To make sure if there is flag sign
+                primitive_mode = STOP_MODE;
+                if(Next_step||Charging_done_flag){//rosserive call
+                    Next_step=false;
+                    primitive_mode = STOP_MODE;
+                    do_waiting_charge = false;
+                    do_docking_out = true;
+                    Charging_done_flag =0;
+                }
+                cout<<"[1] Motion : @@@ do_waiting_charge @@@"<<endl;
+            }
+            else if(do_docking_out){ // Docking out motion ================================================
+                primitive_mode = DOCK_OUT_MODE; // What the,,, Originally it was cancled... [check]
+
+                if(!Joy_mode){
+                    mode_dockin.data = 5;
+                    pub_mode_call_.publish(mode_dockin);
+                }
+                else if(Joy_mode){ //To stop dock out node
+                    mode_dockin.data = 0;
+                    pub_mode_call_.publish(mode_dockin);
+                }
+
+                if(Next_step|| Camera_noline_flag){// To use AMCL pose probably
+                    mode_dockin.data = 0;
+                    pub_mode_call_.publish(mode_dockin);//To stop dock out
+
+                    Camera_noline_flag = false;
+                    Next_step=false;
+                    do_docking_out = false;
+                    primitive_mode = STOP_MODE;
+                }
+                cout<<"[1] Motion : @@@ Docking out @@@"<<endl;
+            }
+            else if(Next_step||g_err.dist < config_.global_dist_boundary_){
+                /*close to the goal position
+                Have to do other motion*/
+                primitive_mode = STOP_MODE;
+                Next_step = false;
+                goal_status_changed = true;
+
+                if(Docking_On && goal_current == pos_docking_station){ //Have to do Docking in
+                    do_docking_in = true;
+                }
+
+                cout<<"[1] Motion : @@@ Arrive to the goal position @@@"<<endl;
+            }
+            else{
+                /*Far from the goal position
+                Have to run to goal position*/
+                primitive_mode = AUTO_LIDAR_MODE;
+                Camera_noline_flag = false; //To make sure if there is flag sign
+                cout<<"[1] Motion : @@@ Run to goal @@@"<<endl;
+            }
+        }
+
+        float send_x, send_y, send_ref_yaw, send_yaw;
+
+        if(primitive_mode ==TURN_MODE){
+            send_x = g_err.static_x_err;
+            send_y = g_err.static_y_err;
+            send_ref_yaw = static_t;
+            send_yaw = static_ct;
+        }
+        else{
+            send_x = g_err.x;
+            send_y = g_err.y;
+            send_ref_yaw = g_rtheta;
+            send_yaw = g_ctheta;
+        }
+
+        localization_msgs.data.push_back(primitive_mode);
+        localization_msgs.data.push_back(send_x);
+        localization_msgs.data.push_back(send_y);
+        localization_msgs.data.push_back(send_ref_yaw);
+        localization_msgs.data.push_back(send_yaw);
+        localization_msgs.data.push_back(init_start_);
+        localization_msgs.data.push_back(Docking_out_cmd);
+
+        pub_localization_.publish(localization_msgs);
+
+        // Reset variables
+        fid_area = 0; // To reset for the fid_area. because if the ID is not detected the previous data is still in.
+
+        // For data logging ----------------------------------------------------------
+        leo_driving::PlotMsg Save_log;
+        Save_log.x = pose_msg.pose.pose.position.x;
+        Save_log.y = pose_msg.pose.pose.position.y;
+
+        if(primitive_mode==TURN_MODE){
+            std::cout <<"static x: " << g_err.static_x_err *cos(static_ct) + g_err.static_y_err *sin(static_ct)<< ", static y: "<<  -g_err.static_x_err *sin(static_ct) + g_err.static_y_err *cos(static_ct) << std::endl;
+            Save_log.r_x = static_x;
+            Save_log.r_y = static_y;
+            Save_log.s_x = g_err.static_x_err *cos(static_ct) + g_err.static_y_err *sin(static_ct);
+            Save_log.s_y = -g_err.static_x_err *sin(static_ct) + g_err.static_y_err *cos(static_ct);
+            Save_log.rt = goal_yaw;
+            Save_log.ct = yaw;
+        }
+        else{
+            Save_log.r_x = goal_current.pose.position.x;
+            Save_log.r_y = goal_current.pose.position.y;
+        }
+        pub_log_data_.publish(Save_log);
+    }
+
+    //*** Read CSV **************************************************************//
+    void remove_spaces(char* s) {
+        const char* d = s;
+        do {
+            while (*d == ' ') {
+                ++d;
+            }
+        } while (*s++ = *d++);
+    }
+    struct csv_data{
+        char s[2][1024];
+    };
+    void getfield(char* line, csv_data *d, int end_idx){
+        int idx = 0;
+        char *token = strtok(line, ",");
+        do{
+            strcpy(d->s[idx++], token);
+        }
+        while ( idx != end_idx && (token = strtok(NULL, ",")));
+    }
+    void ReadCSV(){
+        FILE* stream = fopen("/home/cocel/mapping_ws/src/FAST_LIO/PCD/path011922_14_54.csv", "r"); // have to change current map csv file
+
+        char line[1024];
+        csv_data d;
+        while (fgets(line, 1024, stream)){
+            remove_spaces(line);
+
+            char *tmp = strdup(line);
+            getfield(tmp, &d, 2);
+
+            geometry_msgs::PoseStamped position;
+            position.pose.position.x = stof(d.s[0]);
+            position.pose.position.y = stof(d.s[1]);
+            map_data.push_back(position);
+            free(tmp);
+        }
+        /* cout map_data */
+        //        for(int i = 0; i < map_data.size(); i++){
+        //            cout<<"map_data["<<i<<"] = "<<map_data[i]<<endl;
+        //        }
+    }
+
+    //*** Event *****************************************************************//
+    int FindIdx(geometry_msgs::PoseStamped pos_){
+        vector<int> idx;
+        double smallest_idx = 0;
+        double x = pos_.pose.position.x;
+        double y = pos_.pose.position.y;
+        #if USING_CSV
+        for(int i = 0; i < map_data.size()-1; i++){
+            if((x <= map_data[i].pose.position.x && x > map_data[i+1].pose.position.x) ||
+                    (x > map_data[i].pose.position.x && x <= map_data[i+1].pose.position.x)){
+                idx.push_back(i);
+            }
+        }
+        for(int i = 0; i < idx.size(); i++){
+            double err = 1000;
+            double temp_err = fabs(y -map_data[idx[i]].pose.position.y);
+            if(temp_err < err){
+                err = temp_err;
+                smallest_idx = idx[i];
+            }
+        }
+        //        if(idx == 0){
+        //            double CalcPosErr(map_data[0],pos_)
+        //        }
+        return smallest_idx;
+        #else
+        //Just compare using x position
+        return (int)x;
+        #endif
+    }
+    double CalcPosErr(geometry_msgs::PoseStamped pos1, geometry_msgs::PoseStamped pos2){
+        double err_x = pos1.pose.position.x - pos2.pose.position.x;
+        double err_y = pos1.pose.position.y - pos2.pose.position.y;
+
+        return sqrt(pow(err_x,2)+pow(err_y,2));
+    }
+    bool NeedTurn(geometry_msgs::PoseStamped event_goal_pos, geometry_msgs::PoseStamped previous_goal_pos, geometry_msgs::PoseStamped current_pos){
+        bool need_turn = false;
+        int idx_event_goal = FindIdx(event_goal_pos);
+        int idx_previous_goal = FindIdx(previous_goal_pos);
+        int idx_current_pos = FindIdx(current_pos);
+
+        //need to erase
+        //        cout<<"idx_event_goal    = "<<idx_event_goal<<endl;
+        //        cout<<"idx_previous_goal = "<<idx_previous_goal<<endl;
+        //        cout<<"idx_current_pos   = "<<idx_current_pos<<endl;
+
+        if(!((idx_event_goal > idx_current_pos && idx_event_goal < idx_previous_goal) ||
+             (idx_event_goal > idx_previous_goal && idx_event_goal < idx_current_pos))){
+            need_turn = true;
+        }
+        if(idx_event_goal == idx_current_pos){
+            if(CalcPosErr(event_goal_pos, previous_goal_pos) > CalcPosErr(current_pos, previous_goal_pos)){
+                need_turn = true;
+            }
+        }
+        return need_turn;
+    }
+
+    //*** Tunnel Pose ***********************************************************//
+    void SetTunnelPoseUsingQR(int id){//pcw for QR local
+        //just for test have to modify to real value
+        //if(id <100)
+        if(id==1 || id ==2)
+            tunnel_pose = id*100;
+    }
+
+    //*** Docking ***************************************************************//
+    void CameraEndCallback(const std_msgs::Empty::ConstPtr &msg){
+        Camera_noline_flag = true;
+    }
+    bool docking_done(std_srvs::Empty::Request &req, std_srvs::Empty::Response &resp)
+    {
+        Charging_done_flag = true;
+        return true;
+    }
+
+    //*** Goal position *********************************************************//
+    void EventEndCallback(const std_msgs::Empty::ConstPtr &msg){ //Event : pcw
+        goal_status_changed = true;
+        event_end_flag = true;
+        idx_start_goal = 0;
+        cout<<"#####################End event!!!!!!####################"<<endl;
+    }
+    void SetGoalfromRviz(const geometry_msgs::PoseStamped::ConstPtr& click_msg){
+        ROS_INFO("%d th goal is set", goal_count_);
+
+        // TODO : have to change!!!!
+        static bool set_init = true;
+
+        geometry_msgs::PoseStamped temp;
+        
+        if(!set_init){
+            event_goal_set_[goal_count_++] = *click_msg;
+        }
+        else if(set_init){
+            set_init = false;
+        }
+
+        if(goal_count_ >= 2) {
+            goal_count_ = 0;
+            event_flag=true; //TODO When the goal is set to basic goal, this parameter should be 'false'
+            goal_status_changed = true;
+
+            int Idx[2] = {0, };
+            for(int i=0; i<2; i++){
+                Idx[i] = FindIdx(event_goal_set_[i]);
+            }
+            if(Idx[0]>Idx[1]) {//have to sort
+                temp = event_goal_set_[0];
+                event_goal_set_[0] = event_goal_set_[1];
+                event_goal_set_[1] = temp;
+            }
+            // TODO : else if(Idx[0] == Idx[1])
+
+            //event for test
+            // event_goal_set_[0].pose.position.x = 1.0;
+            // event_goal_set_[0].pose.position.y = 0.0;
+            // event_goal_set_[1].pose.position.x = 2.0;
+            // event_goal_set_[1].pose.position.y = 0.0;
+        }
+    }
+
+    //*** External ***********************************************************//
+    void ModedecisionCallback(const std_msgs::Int32::ConstPtr &msg_cnt)//To jump the behavior of user
+    {
+        behavior_cnt = msg_cnt->data;
+    }
+
+    //*** QR *****************************************************************//
+    void QRtestCallback(const std_msgs::Float32::ConstPtr& QR_flag_msgs);
+    void areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs);
+
+    //*** For future *********************************************************//
+    bool odominit(leo_driving::UpdateOdom::Request& req, leo_driving::UpdateOdom::Response& res);
+    void predoneCallback(const std_msgs::Empty::ConstPtr &msg_empty);
+    void DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call);
+    void RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs);
+
+
+private:
+    ros::Subscriber sub_joy_;
+    ros::Subscriber sub_pose_;
+    ros::Subscriber sub_pose_lio_;
+    ros::Subscriber sub_pose_driving_;
+    ros::Subscriber sub_goal_;
+    ros::Subscriber sub_camera_line_end_;
+
+    ros::Subscriber sub_area_;
+    ros::Subscriber sub_mode_;
+    ros::Subscriber sub_QRinit_;
+
+
+    ros::Subscriber sub_predone_;
+    ros::Subscriber sub_mode_decision_;
+    ros::Subscriber sub_pose_dt_from_linearvel; //pcw for QR local
+    ros::Subscriber sub_event_end_;//Event : pcw
+
+    ros::ServiceServer sub_docking_done_;
+
+    ros::Publisher pub_localization_;
+    ros::Publisher pub_robot_pose_;
+    ros::Publisher pub_QR_;
+    ros::Publisher pub_log_data_;
+    ros::Publisher pub_mode_call_;
+    ros::Publisher pub_tunnel_pose;//pcw for Tunnel pose
+
+
+    /* Run */
+    bool FIRST_START_FLAG =true; //To set a behavior_cnt at first
+
+    bool is_rotating_ = false;
+    bool init_start_ = false; //To initial odom and IMU
+    bool g_rtheta_flag =true;
+
+    bool event_flag =false;//For a event goal
+    bool event_end_flag = false;
+    int idx_start_goal = 0;
+
+    bool Joy_mode= false;
+
+    float static_x=0.0, static_y=0.0,static_t=0.0,static_ct=0.0;
+    float g_x_err,g_y_err, g_rtheta,g_ctheta;
+    int primitive_mode;
+    float line_y_pose = 0;//not necessary
+
+    struct global_err{
+        float x ,y;
+        float dist;
+        float ang;
+        float static_x_err, static_y_err;
+    };
+
+    bool do_turn;
+    geometry_msgs::PoseStamped pos_docking_station;
+    bool Docking_On;
+    bool do_docking_in;
+    bool do_docking_out;
+    bool do_waiting_charge;
+    int goal_idx_cur = 1;
+
+
+    // GOAL
+    unsigned int start_wait=0;
+    int goal_index_ = 0;
+    int goal_count_ = 0;
+    float goal_yaw = M_PI;
+
+    //Cmaera
+    int fid_ID=0;
+    float fid_area=0;
+    bool Camera_noline_flag= false;
+
+    //Linear vel pose from roverroboics_ros_drier
+    //pcw for QR local
+    double dt_x_by_linearvel = 0;
+    double dt_y_by_linearvel = 0;
+    double pos_x_by_linearvel = 0;
+    double pos_y_by_linearvel = 0;
+    //
+
+    //Decision
+    unsigned int behavior_cnt =6; //For case 5 or case 6
+    bool Charging_done_flag =false;
+    int HJ_mode_low=STOP_MODE;
+    bool Next_step =false;
+
+    unsigned int STOP_cnt =0;
+
+    //To recognize only one press for joystick
+    unsigned int switch_flag0 =0;
+    unsigned int switch_flag1 =0;
+
+    double past_time=0;
+    double tunnel_pose =0, current_tunnel_pose =0;
+    double Tunnel_reference=0;
+    int mobile_direction =1;
+
+    bool home_arrival_flag =true;
+    float Docking_out_cmd =0;
+
+    double encoder_angle = 0;
+    double encoder_angular = 0;
+
+    //odom publish
+    double odom_x=0;
+    double odom_y=0;
+    double odom_theta=0;
+    double update_x=0, update_y=0, update_theta=0;
+    bool odom_update=false,odom_init_flag=false;
+
+    geometry_msgs::PoseStamped event_goal_set_[2]; // interrupted goal set
+    geometry_msgs::PoseStamped main_goal_set_[2]; // end to end goal set
+    geometry_msgs::PoseStamped current_goal_set_[2]; // current goal set
+    geometry_msgs::PoseStamped goal_current;
+    geometry_msgs::PoseStamped goal_previous;
+    geometry_msgs::PoseStamped current_pos;
+
+    geometry_msgs::PoseWithCovarianceStamped current_pose;
+
+
+    //Event : pcw
+    bool goal_status_changed = false;
+    vector<geometry_msgs::PoseStamped> map_data;
+    // end Event : pcw
+
+
+    /** configuration parameters */
+    typedef struct
+    {
+        double global_dist_boundary_;
+        double global_angle_boundary_;
+        bool amcl_driving_;
+        int HJ_MODE_;
+        bool Without_QR_move_;
+        double Main_start_x_;
+        double Main_start_y_;
+        double Main_goal_x_;
+        double Main_goal_y_;
+        double tunnel_start_;
+        double tunnel_goal_;
+
+    } Config;
+    Config config_;
+
+
+};
+
+void LocalizationNode::areaDataCallback(const std_msgs::Float32MultiArray::ConstPtr& area_msgs) //QR detection Aurco realsense for a front camera.
+{
+    fid_ID = (int) area_msgs->data[0];
+    fid_area =area_msgs->data[1];
+    //ROS_INFO("fid_ID: %d, are: %f",fid_ID, fid_area);
+
+    SetTunnelPoseUsingQR(fid_ID);
+}
+void LocalizationNode::QRtestCallback(const std_msgs::Float32::ConstPtr& QR_flag_msgs)
+{
+    if(QR_flag_msgs->data ==0)
+    {
+        config_.Without_QR_move_ = false;
+        ROS_INFO("When HJ_MODE==2, with QR initialzation");
+    }
+    else if(QR_flag_msgs->data ==1)
+    {
+        config_.Without_QR_move_ = true;
+        ROS_INFO("When HJ_MODE==2, without QR initialzation");
+    }
+}
+
+bool LocalizationNode::odominit(leo_driving::UpdateOdom::Request& req, leo_driving::UpdateOdom::Response& res)
+{
+    odom_init_flag = true;
+    update_x = req.odom_x;
+    update_y = req.odom_y;
+    update_theta = req.odom_theta;
+}
+void LocalizationNode::DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call)
+{
+    HJ_mode_low = mode_call->data;
+    //ROS_INFO("Mode: %d",HJ_mode_low);
+}
+void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odom_msgs)
+{
+    double dt = 0;
+    ros::Time ros_now_time = ros::Time::now();
+    double now_time = ros_now_time.toSec();
+
+    dt = now_time - past_time;
+    past_time = now_time;
+
+    tunnel_pose += mobile_direction*odom_msgs->twist.twist.linear.x * dt ;
+    encoder_angular = odom_msgs->twist.twist.angular.z;
+    if(behavior_cnt == 1 || behavior_cnt == 3){
+        //        encoder_angle += encoder_angular* dt*2/3;
+        encoder_angle += encoder_angular* dt;
+    }
+    else{
+        encoder_angle = 0;
+    }
+    geometry_msgs::Point tunnel_pos_pub;
+    tunnel_pos_pub.x= tunnel_pose;
+    tunnel_pos_pub.z = encoder_angle;
+    pub_tunnel_pose.publish(tunnel_pos_pub);
+}
+void LocalizationNode::predoneCallback(const std_msgs::Empty::ConstPtr &msg_empty)
+{
+    if(behavior_cnt==1)
+    {
+        behavior_cnt =2; //The pre lidar is finished; thus next step
+        primitive_mode = STOP_MODE;
+
+        is_rotating_ =false; //Those two parameters for waiting before rotating
+        STOP_cnt =0;
+    }
+    else if (behavior_cnt==3)
+    {
+        behavior_cnt =4; //The pre lidar is finished; thus next step
+        primitive_mode = STOP_MODE;
+
+        is_rotating_ =false;
+        STOP_cnt =0;
+    }
+}
+}
+PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);
+
+/////////////////////////////////////////////////////////////////////////////
+#else
+/////////////////////////////////////////////////////////////////////////////
 
 namespace auto_driving {
 
@@ -98,10 +1059,7 @@ private:
         sub_pose_ = nhp.subscribe<geometry_msgs::PoseWithCovarianceStamped>("/amcl_pose", 10, &LocalizationNode::UpdateposeCallback, this);//Pose callback from amcl node
         sub_pose_lio_ = nhp.subscribe<nav_msgs::Odometry>("/localization", 10, &LocalizationNode::Update3dposeCallback, this);//fast-lio pose
         // sub_pose_driving_ = nhp.subscribe<std_msgs::Int32> ("/cmd_publish", 10, &LocalizationNode::poseCallback, this);
-        timer_local_node_ =
-            nhp.createTimer(ros::Duration(0.1),
-                            &LocalizationNode::poseCallback, this);
-        sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
+
         sub_predone_ = nhp.subscribe("/auto_pre_lidar_mode/end", 1, &LocalizationNode::predoneCallback, this);//After finishing AUTO_PRE_LIDAR MODE
 
         sub_camera_line_end_ = nhp.subscribe<std_msgs::Empty>("/camera_noline", 1, &LocalizationNode::CameraEndCallback, this);
@@ -129,6 +1087,10 @@ private:
 
 	pub_3dlocal_start_ = nhp.advertise<std_msgs::Bool>("/localization_start",1);
 	pub_3dlocal_stop_ = nhp.advertise<std_msgs::Bool>("/localization_stop",1);
+        timer_local_node_ =
+            nhp.createTimer(ros::Duration(0.1),
+                            &LocalizationNode::poseCallback, this);
+        sub_mode_ = nhp.subscribe("/mode/low", 10, &LocalizationNode::DecisionpublishCmd, this); //To get a mode/low from Hanjeon
     }
 
 
@@ -164,6 +1126,7 @@ private:
     }
     void setGoal(const geometry_msgs::PoseStamped::ConstPtr& click_msg){
         //need to sort list
+        /*
         ROS_INFO("%d th goal is set", goal_count_);
 
         event_goal_set_[goal_count_++] = *click_msg;
@@ -177,6 +1140,44 @@ private:
             event_goal_set_[0].pose.position.y = 0.5;//1.2;
             event_goal_set_[1].pose.position.x = 10;//14;
             event_goal_set_[1].pose.position.y = 0.5;//1.5;
+        }*/
+
+
+        ROS_INFO("%d th goal is set", goal_count_);
+
+        // TODO : have to change!!!!
+        static bool set_init = true;
+
+        geometry_msgs::PoseStamped temp;
+        
+        if(!set_init){
+            event_goal_set_[goal_count_++] = *click_msg;
+        }
+        else if(set_init){
+            set_init = false;
+        }
+
+        if(goal_count_ >= 2) {
+            goal_count_ = 0;
+            event_flag=true; //TODO When the goal is set to basic goal, this parameter should be 'false'
+            goal_status_changed = true;
+
+            int Idx[2] = {0, };
+            for(int i=0; i<2; i++){
+                Idx[i] = FindIdx(event_goal_set_[i]);
+            }
+            if(Idx[0]>Idx[1]) {//have to sort
+                temp = event_goal_set_[0];
+                event_goal_set_[0] = event_goal_set_[1];
+                event_goal_set_[1] = temp;
+            }
+            // TODO : else if(Idx[0] == Idx[1])
+
+            //event for test
+            // event_goal_set_[0].pose.position.x = 1.0;
+            // event_goal_set_[0].pose.position.y = 0.0;
+            // event_goal_set_[1].pose.position.x = 2.0;
+            // event_goal_set_[1].pose.position.y = 0.0;
         }
     }
     void EventEndCallback(const std_msgs::Empty::ConstPtr &msg){ //Event : pcw
@@ -274,7 +1275,9 @@ private:
         //        if(idx == 0){
         //            double CalcPosErr(map_data[0],pos_)
         //        }
-        return smallest_idx;
+        
+        return (int)x;
+        //return smallest_idx;
     }
 
     double CalcPosErr(geometry_msgs::PoseStamped pos1, geometry_msgs::PoseStamped pos2){
@@ -1274,6 +2277,7 @@ private:
 
     }
 
+
     //Previous thoughts
     void DecisionpublishCmd(const std_msgs::Int32::ConstPtr &mode_call);
     void QRtestCallback(const std_msgs::Float32::ConstPtr& QR_flag_msgs);
@@ -1520,3 +2524,7 @@ void LocalizationNode::RobotOdomCallback(const nav_msgs::Odometry::ConstPtr& odo
 }
 }
 PLUGINLIB_EXPORT_CLASS(auto_driving::LocalizationNode, nodelet::Nodelet);
+
+
+
+#endif

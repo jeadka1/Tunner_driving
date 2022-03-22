@@ -65,6 +65,7 @@
         <rosparam command="load" file="$(find leo_driving)/config/obstacles.yaml"/>
     </node>
 
+
     <!--node pkg="nodelet" type="nodelet" name="CmdPublishNode_loader" args="load auto_driving/CmdPublishNode nodelet_manager" output="screen">
         <rosparam command="load" file="$(find leo_driving)/config/cmd_publish.yaml"/>
         <param name="amcl_driving" value="true"/>

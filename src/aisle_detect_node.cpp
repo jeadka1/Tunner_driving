@@ -38,7 +38,8 @@
 // #include <leo_driving/Mode.h>
 
 #define INIT_WAIT 10
-#define RATIO_VEL 1.5
+#define RATIO_VEL 1.0
+#define TIMER_SAMPLE 0.05
 
 using namespace message_filters;
 using namespace std;
@@ -59,6 +60,20 @@ enum MODE_{
     STOP_MODE,
     TURN_MODE,
 };
+struct CMD_STURCT{
+    double rp_refy = 0.0;
+    double rp_cury= 0.0;
+    double refx= 0.0;
+    double refy= 0.0;
+    double reftheta= 0.0;
+    double curx= 0.0;
+    double cury= 0.0;
+    double curtheta= 0.0;
+    double line_start= 0.0;
+    double line_end= 0.0;
+};
+
+CMD_STURCT cmd_value;
 namespace auto_driving {
 
 class AisleDetectNode : public nodelet::Nodelet {
@@ -79,19 +94,24 @@ private:
         nhp.param("Kpx_param", config_.Kpx_param_, 2.0);
         nhp.param("Kpy_param", config_.Kpy_param_, 1.1);
         nhp.param("Kpy_param_rot", config_.Kpy_param_rot_, 0.01);
+        nhp.param("tunnel_gain_boundary", config_.tunnel_gain_boundary_, 0.01);
         nhp.param("Kpy_param_boundary_gain", config_.Kpy_param_boundary_gain_, 0.05);
         nhp.param("theta_ratio", config_.theta_ratio_, 0.8);
-        nhp.param("tunnel_gain_boundary", config_.tunnel_gain_boundary_, 0.01);
+
         nhp.param("linear_vel", config_.linear_vel_, 0.0);
+        nhp.param("obs_vel_ratio", config_.obs_vel_ratio_, 1.0);
         nhp.param("robot_width", config_.robot_width_, 0.45);
-        nhp.param("line_width_min", config_.line_width_min_, 0.7);
-        nhp.param("line_width_max", config_.line_width_max_, 1.0);
-        nhp.param("obs_coefficient", config_.obs_coefficient_, 0.5);
         nhp.param("front_obs", config_.front_obs_, 0.6);
-        nhp.param("boundary_percent", config_.boundary_percent_, 0.02);
+        nhp.param("front_obs_2", config_.front_obs_2_, 0.5);
         nhp.param("spare_length", config_.spare_length_, 0.3);
+        nhp.param("check_obstacles", config_.check_obstacles_, true);
+        nhp.param("obs_avoidance_distance", config_.obs_avoidance_distance_, 0.1);
+        nhp.param("obs_double_check", config_.obs_double_check_, true);
+        nhp.param("obs_double_check_dist", config_.obs_double_check_dist_, 0.5);
+        nhp.param("backward_length", config_.backward_length_, -0.3);
+
+
         nhp.param("amcl_driving", config_.amcl_driving_, true);
-        nhp.param("check_obstacles", config_.check_obstacles_, false);
         nhp.param("rot_kx", config_.rot_kx_, 0.1);
         nhp.param("rot_ky", config_.rot_ky_, 0.1);
         nhp.param("rot_kt", config_.rot_kt_, 0.3);
@@ -100,11 +120,10 @@ private:
         nhp.param("max_vel", config_.max_vel_, 0.5);
         nhp.param("max_rot", config_.max_rot_, 1.0);
         nhp.param("Postech_code", config_.Postech_code_, false);
-        nhp.param("obs_avoidance_distance", config_.obs_avoidance_distance_, 0.1);
 
         // Subscriber & Publisher
         sub_scan_ = nhp.subscribe("/rp/scan", 20, &AisleDetectNode::scanCallback, this);
-
+        
         pub_line_ = nhp.advertise<sensor_msgs::PointCloud2>("/cluster_line", 10);
         pub_points_ = nhp.advertise<sensor_msgs::PointCloud2> ("/aisle_points", 10);
 
@@ -117,11 +136,14 @@ private:
         sub_localization_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/localization_data", 10, &AisleDetectNode::localDataCallback, this);
         sub_mode_call_ = nhp.subscribe<std_msgs::Int32> ("/mode/low", 10, &AisleDetectNode::modeCallback, this);
         sub_speed_ = nhp.subscribe("/mission/setspeed", 1, &AisleDetectNode::SpeedCallback, this);
+        sub_obs_dists_ = nhp.subscribe<std_msgs::Float32MultiArray> ("/obs_dists", 10, &AisleDetectNode::obsCallback, this);
 
 
         pub_cmd_ = nhp.advertise<geometry_msgs::Twist> ("/cmd_vel", 20);
         pub_docking_end_ = nhp.advertise<std_msgs::Int32> ("/joy_from_cmd", 1); // Temperary To finish with joystick
         pub_prelidar_end_ = nhp.advertise<std_msgs::Empty> ("/auto_pre_lidar_mode/end", 10);
+
+        timer_cmd_node = nhp.createTimer(ros::Duration(TIMER_SAMPLE), &AisleDetectNode::cmdtimercallback, this);
     };
 
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan_msg)
@@ -273,13 +295,13 @@ private:
         ref_x_ = reference.x;
         line_start_y_ = line_start_point.y;
         line_end_y_ = line_end_point.y;
+    }
+    void cmdtimercallback(const ros::TimerEvent &event)
+    {
+        std_msgs::Empty EmptyMsg;
         geometry_msgs::Twist cmd_vel;
         int Mode_type;
         HJ_mode_cnt++;
-
-        //cout<<"1. reference = "<<reference<<endl;
-        //cout<<"2. near_point_y = "<<near_y_<<endl;
-
 
         //To stop when the communication is delayed or failed
         if(config_.Postech_code_)
@@ -292,18 +314,22 @@ private:
         }
         //To interrupt mode_type, program here->.
         //To operate the gmapping
-        if(config_.amcl_driving_ ==false)
-        {
-            Mode_type = AUTO_LIDAR_MODE;
-            if(!gmapping_go)
-                return;
-        }
-        //To operate manual mode
+
+	
+        // minwook
+        // if(config_.amcl_driving_ ==false)
+        // {
+        //     Mode_type = AUTO_LIDAR_MODE;
+        //     if(!gmapping_go)
+        //         return;
+        // }
+        //minwook ////////////////////////////////////////////////
+        //Mode_type = AUTO_LIDAR_MODE;
+        //minwook ////////////////////////////////////////////////
+        
         if(joy_driving_ || HJ_mode_low == MANUAL_MODE)
             Mode_type = MANUAL_MODE;
 
-
-        //std::cout<<"Mode_type: "<<Mode_type<<std::endl;
         if(init_call || init_cnt !=0)
         {
             init_call = false; //Without this, it keeps initializing due to delayed subscribe from loclizaiton node.
@@ -313,8 +339,6 @@ private:
             pub_cmd_.publish(cmd_vel);
             if(init_cnt==INIT_WAIT)
             {
-                //system("rosservice call /odom_init 0.0 0.0 0.0"); //Intialize Encoder
-                //system("rosservice call /reset_odom"); //Intialize IMU
                 system("rosservice call /pose_update 0.0 0.0 0.0"); //Intialize AMCL
             }
             else if(init_cnt==INIT_WAIT*3)
@@ -331,48 +355,51 @@ private:
         }
 
         //// 2. Autonomous Driving
-
         float y_err_local = ref_y_ - near_y_;
-        float line_length_obs = copysign(fabs(line_start_y_ - line_end_y_),y_err_local);
-        float y_err_theta = config_.theta_ratio_*atan2(y_err_local,0.2) + (1-config_.theta_ratio_)*atan2(line_length_obs,0.8);
-        // std::cout<< "y_err_local" <<y_err_local<<std::endl;
-        // std::cout<< "line_length_obs" <<line_length_obs<<std::endl;
         cmd_vel.linear.x = config_.linear_vel_;
 	    double temp_angular_max;
-        //std::cout<<"---------------------------ais: " << y_err_local<<std::endl;
         // 2.1 Check Obstacles
-
         if (config_.check_obstacles_ && (Mode_type == AUTO_LIDAR_MODE || Mode_type == AUTO_IMAGE_MODE))
         {
             float line_length = line_end_y_ - line_start_y_;
-            float left_boundary = line_start_y_ - (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
-            float right_boundary = line_end_y_ + (line_length * config_.boundary_percent_ + 0.5 * config_.robot_width_);
-            bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
+            //bool is_obs_in_aisle = obs_y_ > line_end_y_ && obs_y_ < line_start_y_;
             // (0) Front Obstacle Update
 
-            //std::cout << "Obs_x : " << obs_x_ << ", ref_x : " <<  ref_x_<<std::endl;
+           // std::cout << "Obs_x : " << obs_x_ << ", Obs_y : " << obs_y_  << "Line_start : "<<line_start_y_<<", Line_end : "<<line_end_y_<<std::endl; 
 
-            if (obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/4 )
+            if ((obs_x_ < config_.front_obs_ && abs(obs_y_) < config_.robot_width_/3)
+                ||(obs_x_ < config_.front_obs_2_ && abs(obs_y_) < config_.robot_width_/2))
             {
+                if(obs_x_ <config_.obs_double_check_dist_){
+                    double_check = true;
+                }
                 cmd_vel.linear.x = 0.0;
-                cmd_vel.linear.z = 0.0;
+                cmd_vel.angular.z = 0.0;
+		        was_obs_in_aisle = false;
                 pub_cmd_.publish(cmd_vel);
                 std::cout<<"Front obstacle is deteced"<<std::endl;
                 return;
-            } // below  else if
-
+            } 
+            else if (config_.obs_double_check_ && double_check == true){ //when obstacle disappear, slightly go back to find obstacle
+                cmd_vel.linear.x = -0.1;
+		        cmd_vel.angular.z = 0.0;
+                pub_cmd_.publish(cmd_vel);
+                backward_length += cmd_vel.linear.x * TIMER_SAMPLE;
+		        std::cout<<"backward: "<<backward_length<<std::endl;
+                if (obs_x_ < config_.front_obs_ || backward_length <config_.backward_length_){
+                    std::cout<<"-------------backward_init------------"<<std::endl;
+			        double_check =false;
+                    backward_length =0;
+		        }
+		        return;
+            }
             // (1) Right Obstacle Update	(y:오른쪽이 음수)
             else if(obs_y_ < 0 && obs_y_ > -1 && obs_x_< 1)
             {
-                cmd_vel.linear.x =0.2;
-                //Start- end = length
-                //robot_length = 0.5m
-                //0.1 m + 0.1m
+                cmd_vel.linear.x = config_.obs_vel_ratio_*config_.linear_vel_;
                 std::cout << "Right obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
-                //float shift = config_.obs_coefficient_*(line_end_y_ - obs_y_);
-                //y_err_local = (near_y_ + shift > left_boundary) ? left_boundary - near_y_ : y_err_local + shift;
-                //y_err_local = (line_end_y_+obs_y_)/2 - near_y_;
                 y_err_local = ref_y_-config_.obs_avoidance_distance_ - near_y_;
+
                 temp_y_err_local = 1;
                 was_obs_in_aisle = true;
                 spare_length = 0;
@@ -380,44 +407,37 @@ private:
             // (2) Left Obstacle Update (y:왼쪽이 양수)
             else if(obs_y_ > 0 && obs_y_ < 1 && obs_x_< 1)
             {
-                cmd_vel.linear.x =0.2;
+                cmd_vel.linear.x =config_.obs_vel_ratio_*config_.linear_vel_;
                 std::cout << "Left obstacle is detected, distance = " << obs_y_ << ", x = " <<  obs_x_<<std::endl;
-                //float shift = config_.obs_coefficient_*(line_start_y_ - obs_y_);
-                //y_err_local = (near_y_ + shift < right_boundary) ? right_boundary - near_y_ : y_err_local + shift;
-                //                y_err_local = (obs_y_+line_start_y_)/2 - near_y_;
                 y_err_local = ref_y_+config_.obs_avoidance_distance_ - near_y_;
+                
                 temp_y_err_local = -1;
                 was_obs_in_aisle = true;
                 spare_length = 0;
             }
+            
             // (3) After obs disappear, go further 'spare_length'
-            if(!is_obs_in_aisle && was_obs_in_aisle)
+            else if(was_obs_in_aisle)
             {
-                cmd_vel.linear.x =0.2;
-                spare_length += cmd_vel.linear.x * 0.1;
+                cmd_vel.linear.x =config_.obs_vel_ratio_*config_.linear_vel_;
+                spare_length += cmd_vel.linear.x * TIMER_SAMPLE;
                 //y_err_local = temp_y_err_local;
                 if(temp_y_err_local ==1)
                     y_err_local = ref_y_ - config_.obs_avoidance_distance_ - near_y_;
                 else if (temp_y_err_local == -1)
                     y_err_local = ref_y_ + config_.obs_avoidance_distance_ - near_y_;
-                std::cout<< "straight foward of spare distance" <<std::endl;
+                std::cout<< "go straight for spare distance" <<std::endl;
                 if(spare_length > config_.spare_length_)
                 {
                     spare_length = 0;
                     was_obs_in_aisle = false;
                     std::cout<<"spare finish"<<std::endl;
-                    cmd_vel.linear.x = config_.linear_vel_;
                 }
             }
-
         }
-
-
-        float straight_l_xerr;
 
         float l_xerr,l_yerr;
         float tunnel_angle_diff;
-
         switch(Mode_type)
         {
         case MANUAL_MODE:
@@ -439,19 +459,17 @@ private:
 //                cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
 //            pre_y_err = y_err_local;
 
-        // if (was_obs_in_aisle){ //for obstacle avoid
-        if(1){
-            cmd_vel.angular.z = -config_.Kpy_param_ * y_err_local -config_.Kpy_param_rot_*(y_err_local - pre_y_err)*10;
-            pre_y_err = y_err_local;
-        }
-        else{ //for normal driving by theta 
+            //atan2 method by jinsuk
+            tunnel_angle_diff = atan2(y_err_local,0.2);
+            cmd_vel.angular.z = -config_.Kpy_param_ * tunnel_angle_diff - config_.Kpy_param_rot_*(tunnel_angle_diff - pre_y_err)/TIMER_SAMPLE;
+		    pre_y_err = tunnel_angle_diff;
 
-            cmd_vel.angular.z= -config_.Kpy_param_*y_err_theta-config_.Kpy_param_rot_*(y_err_theta - pre_y_err)*10; // rad
-            pre_y_err = y_err_theta;
-        }
-            
-
-		cmd_vel.linear.x = config_.linear_vel_;//(tunnel_angle_diff);
+	   //only ref pos method
+	   //cmd_vel.angular.z = -config_.Kpy_param_ * ref_y_ -config_.Kpy_param_rot_*(ref_y_ - pre_y_err)*10;
+	   //pre_y_err = ref_y_;
+		    
+            //Minwook
+            //cmd_vel.linear.x = config_.linear_vel_;//(tunnel_angle_diff);
 
             //Saturation parts due to Zero's deadline from VESC
             if(cmd_vel.linear.x< config_.min_vel_ && cmd_vel.linear.x>0)
@@ -463,17 +481,17 @@ private:
             else if(cmd_vel.linear.x< -config_.max_vel_)
                 cmd_vel.linear.x = -config_.max_vel_;
 
-            if(cmd_vel.angular.z> config_.max_rot_)
-                cmd_vel.angular.z = config_.max_rot_;
-            else if(cmd_vel.angular.z< -config_.max_rot_)
-                cmd_vel.angular.z = -config_.max_rot_;
-
-		// if(fabs(cmd_vel.angular.z) >RATIO_VEL)
-		// 	temp_angular_max = RATIO_VEL;
-		// else
-		// 	temp_angular_max = fabs(cmd_vel.angular.z);
-
-		// cmd_vel.linear.x = cmd_vel.linear.x*(1- temp_angular_max);
+            if(cmd_vel.angular.z> config_.max_rot_*2)
+                cmd_vel.angular.z = config_.max_rot_*2;
+            else if(cmd_vel.angular.z< -config_.max_rot_*2)
+                cmd_vel.angular.z = -config_.max_rot_*2;
+/*
+            if(fabs(cmd_vel.angular.z) >RATIO_VEL)
+                temp_angular_max = RATIO_VEL;
+            else
+                temp_angular_max = fabs(cmd_vel.angular.z);*/
+		//temp_angular_max = fabs(cmd_vel.angular.z)/config_.max_rot_/2;
+            //cmd_vel.linear.x = cmd_vel.linear.x*(1.0- temp_angular_max);
 
             //std::cout<<"x: "<<cmd_vel.linear.x<< ", z: " << cmd_vel.angular.z<<std::endl;
             //Saturation of 'cmd_vel.linear.x' doesn't need because when the x fits, it's not necessary to move
@@ -651,7 +669,7 @@ private:
         if ((joy_msg->axes[6] == 1 || joy_msg->axes[6] == -1) && axes_flag[6] ==0)
         {
             axes_flag[6] = 1;
-            std::cout<<"(push) axes up "<<std::endl;
+            //std::cout<<"(push) axes up "<<std::endl;
             if(joy_msg->axes[6] == 1)
                 manual_ratio += 0.1;
             else if(joy_msg->axes[6] == -1)
@@ -660,6 +678,7 @@ private:
                 manual_ratio = 1.5;
             else if(manual_ratio <= 0.5)
                 manual_ratio = 0.5;
+	    std::cout<<"manul velocity: "<< manual_ratio<<std::endl;
         }
         else if(joy_msg->axes[6] == 0 && axes_flag[6] ==1)
         {
@@ -670,7 +689,7 @@ private:
         if ((joy_msg->axes[7] == 1 || joy_msg->axes[7] == -1) && axes_flag[7] ==0)
         {
             axes_flag[7] = 1;
-            std::cout<<"(push) axes up "<<std::endl;
+            //std::cout<<"(push) axes up "<<std::endl;
             if(joy_msg->axes[7] == 1)
                 config_.linear_vel_ += 0.1;
             else if(joy_msg->axes[7] == -1)
@@ -679,6 +698,7 @@ private:
                 config_.linear_vel_ = 1.5;
             else if(config_.linear_vel_ <= 0.2)
                 config_.linear_vel_ = 0.2;
+	   std::cout<<"auto velocity: "<< config_.linear_vel_ <<std::endl;
         }
         else if(joy_msg->axes[7] == 0 && axes_flag[7] ==1)
         {
@@ -745,6 +765,7 @@ private:
 private:
     // Publisher & Subscriber
     ros::Subscriber sub_scan_;
+    ros::Timer timer_cmd_node;
     ros::Publisher pub_line_;
     ros::Publisher pub_points_;
     ros::Publisher pub_prelidar_fail_;
@@ -773,6 +794,9 @@ private:
     float pre_y_err = 0.0;
     float Max_speed = 0.5;
     unsigned int align_cnt=0;
+    bool double_check = false;
+    float backward_length = 0;
+
     // Amcl
     float global_dist_err_ = 0;
     float global_ang_err_ = 0;
@@ -826,21 +850,24 @@ private:
         double Kpx_param_;
         double Kpy_param_;
         double Kpy_param_rot_;
+
+        double tunnel_gain_boundary_;
         double Kpy_param_boundary_gain_;
         double theta_ratio_;
 
-        double tunnel_gain_boundary_;
         double linear_vel_;
+        double obs_vel_ratio_;
         double robot_width_;
-        double obs_coefficient_;
         double front_obs_;
+        double front_obs_2_;
         double spare_length_;
-        double boundary_percent_;
-        double line_width_min_;
-        double line_width_max_;
-        bool amcl_driving_;
         bool check_obstacles_;
+        double obs_avoidance_distance_;
+        bool obs_double_check_;
+        double obs_double_check_dist_;
+        double backward_length_;
 
+        bool amcl_driving_;
         double rot_kx_;
         double rot_ky_;
         double rot_kt_;
@@ -849,7 +876,6 @@ private:
         double max_vel_;
         double max_rot_;
         bool Postech_code_;
-        double obs_avoidance_distance_;
     } Config;
     Config config_;
 };

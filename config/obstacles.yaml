@@ -1,2 +1,5 @@
-obstacle_coefficient: 0.005
-front_obstacle_dist: 0.1
+
+h_velo: 0.43
+front_limit: 1.5
+side_limit: 0.3 #0.25
+
